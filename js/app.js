@@ -137,6 +137,7 @@ function topbar() {
     <div class="top-actions">
       <button class="icon-btn" data-act="search" aria-label="Search">${I.search}</button>
       <button class="icon-btn ${s.hideAmounts ? 'on' : ''}" data-act="toggle-hide" aria-label="${s.hideAmounts ? 'Show amounts' : 'Hide amounts'}">${s.hideAmounts ? I.eyeOff : I.eye}</button>
+      <button class="icon-btn ${s.pinHash ? '' : 'dim'}" data-act="lock-now" aria-label="${s.pinHash ? 'Lock now' : 'Set a passcode'}">${I.lock}</button>
       <button class="icon-btn" data-act="toggle-theme" aria-label="Switch theme">${I.theme}</button>
     </div></header>`;
 }
@@ -177,6 +178,7 @@ function render() {
     ui.lastTotal = v;
   }
   ui.fresh = false;
+  maskDigits(app);
   if (same) window.scrollTo(0, scroll);
   renderLock();
 }
@@ -191,7 +193,7 @@ function welcomeView() {
       <div><span>${I.rupee}</span>Know what's safe to spend today</div>
       <div><span>${I.accounts}</span>Split money into accounts like Savings or Trip</div>
       <div><span>${I.pay}</span>Pay by UPI and log it in one go</div>
-      <div><span>${I.lock}</span>PIN lock and hide amounts</div>
+      <div><span>${I.lock}</span>Passcode lock and hide amounts</div>
     </div>
     <div class="card">
       <div class="eyebrow">Start with what you have now</div>
@@ -220,6 +222,7 @@ function homeView() {
 
   return `
   ${showInstallHint() ? `<section class="card install"><img class="logo-sm" src="icons/icon-192.png" alt=""><div><div class="t">Install Ledger</div><div class="s">${IOS ? `Tap Share ${I.up} then <b>Add to Home Screen</b> to open it like an app.` : 'Open your browser menu and choose <b>Install app</b> or <b>Add to Home screen</b>.'}</div></div><button class="x" data-act="dismiss-install" aria-label="Dismiss">${I.x}</button></section>` : ''}
+  ${!state.settings.pinHash && (() => { try { return !localStorage.getItem('ledger.passcodeHint'); } catch { return false; } })() ? `<section class="card install"><div class="ic-lock">${I.lock}</div><div><div class="t">Add a passcode</div><div class="s">Lock Ledger so only you can open it.</div></div><button class="btn sm accent" data-act="lock-now" style="margin-left:auto">Set</button><button class="x" data-act="dismiss-passcode" aria-label="Dismiss" style="margin-left:4px">${I.x}</button></section>` : ''}
   <section class="card hero">
     <div class="eyebrow">Total balance</div>
     <div class="total num money">${b.total < 0 ? '−' : ''}<span class="cur">₹</span><span id="total-num" data-v="${Math.abs(Math.round(b.total / 100))}">${nf0.format(Math.abs(Math.round(b.total / 100)))}</span></div>
@@ -353,11 +356,11 @@ function settingsView() {
     ${item('money', 'rupee', 'Money & bills', 'Opening balances, monthly budget, recurring bills')}
     ${item('tags', 'tag', 'Accounts & tags', 'Accounts, whose money, categories, people')}
     ${item('rewind', 'clock', 'Rewind', 'How often you get a wrap-up')}
-    ${item('privacy', 'lock', 'Privacy & lock', 'PIN, hide amounts, hidden entries')}
+    ${item('privacy', 'lock', 'Privacy & lock', 'Passcode, hide amounts, hidden entries')}
     ${item('export', 'download', 'Export & backup', 'Excel, backup file, restore')}
     ${item('device', 'device', 'This device', 'Snapshots, demo data, erase, version')}
     <section class="card tap" data-act="toggle-sound"><div class="set-row"><div class="ic">${I.sound}</div><div><div class="t">Sounds & haptics</div><div class="s">Soft taps and chimes as you use the app</div></div><span class="switch ${state.settings.sound !== false ? 'on' : ''}" style="margin-left:auto"></span></div></section>
-    <p class="foot-note">Everything lives on this device only — no cloud, no account. Keep a backup now and then.</p>`;
+    <p class="foot-note">Everything lives on this device only — no cloud, no account. Keep a backup now and then.<br><span class="faint">Version ${S.VERSION}</span></p>`;
 }
 
 // ================================================================ sheets
@@ -396,7 +399,7 @@ function closeSheet() {
   X.play('close');
   rec.bd.classList.remove('show'); rec.sh.classList.remove('show');
   setTimeout(() => { rec.bd.remove(); rec.sh.remove(); }, 480);
-  if (!sheetStack.length) unlockScroll();
+  if (!sheetStack.length) { unlockScroll(); if (reloadWhenFree) setTimeout(() => location.reload(), 500); }
 }
 function closeAllSheets() { while (sheetStack.length) closeSheet(); }
 function replaceSheet(title, body, opts) { const r = sheetStack.pop(); if (r) { r.bd.remove(); r.sh.remove(); } const sh = openSheet(title, body, opts); sh.classList.add('show'); sheetStack.at(-1).bd.classList.add('show'); return sh; }
@@ -735,7 +738,7 @@ function settingsPage(page) {
   } else if (page === 'privacy') {
     title = 'Privacy & lock';
     html = `<div class="card" style="padding:2px 18px">
-      <div class="line-item"><div class="grow"><div class="t">PIN lock</div><div class="s">${s.pinHash ? 'On — asked when you open Ledger' : 'Off'}</div></div>${s.pinHash ? `<button class="btn sm ghost" data-pin="change">Change</button><button class="btn sm danger" data-pin="off">Turn off</button>` : `<button class="btn sm accent" data-pin="set">Set PIN</button>`}</div>
+      <div class="line-item"><div class="grow"><div class="t">Passcode</div><div class="s">${s.pinHash ? 'On — asked when you open Ledger' : 'Off'}</div></div>${s.pinHash ? `<button class="btn sm ghost" data-pin="change">Change</button><button class="btn sm danger" data-pin="off">Turn off</button>` : `<button class="btn sm accent" data-pin="set">Set passcode</button>`}</div>
       ${s.pinHash ? `<div class="line-item"><div class="grow"><div class="t">Lock again after</div><div class="s">Time away from the app</div></div><select class="input" data-lock-after style="width:auto;padding:8px 10px;font-size:14px">${[[0, 'Immediately'], [60, '1 minute'], [300, '5 minutes'], [1800, '30 minutes']].map(([v, l]) => `<option value="${v}" ${Number(s.lockAfter) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>` : ''}
       ${sw('hideAmounts', 'Hide amounts', 'Blur balances until you tap the eye')}
       ${sw('showHidden', 'Show hidden entries', `${state.entries.filter((e) => e.hidden).length} hidden — they always count in totals`)}
@@ -745,7 +748,7 @@ function settingsPage(page) {
         const k = ev.target.closest('[data-switch]')?.dataset.switch;
         if (k) { s[k] = !s[k]; S.save(state); render(); closeSheet(); return settingsPage('privacy'); }
         const p = ev.target.closest('[data-pin]')?.dataset.pin;
-        if (p === 'off') { if (await ask('Turn off PIN?', 'Anyone with this device could open your ledger.', 'Turn off', true)) { s.pinHash = null; S.save(state); closeSheet(); settingsPage('privacy'); toast('PIN removed'); } }
+        if (p === 'off') { if (await ask('Turn off passcode?', 'Anyone with this device could open your ledger.', 'Turn off', true)) { s.pinHash = null; S.save(state); closeSheet(); settingsPage('privacy'); toast('Passcode removed'); } }
         else if (p) setPinFlow(() => { closeSheet(); settingsPage('privacy'); });
       });
       sh.addEventListener('change', (ev) => { if (ev.target.matches('[data-lock-after]')) { s.lockAfter = Number(ev.target.value); S.save(state); toast('Saved'); } });
@@ -784,7 +787,7 @@ function settingsPage(page) {
       const sn = ev.target.closest('[data-snap]')?.dataset.snap;
       if (sn != null) { const snap = S.listSnapshots()[Number(sn)]; if (await ask('Restore snapshot?', `Go back to ${esc(fmtDay(snap.date))} (${snap.count} entries)? What you have now is replaced.`, 'Restore', true)) { state = S.parseBackup(JSON.stringify(snap.data)); closeAllSheets(); commit('Snapshot restored'); } }
       if (ev.target.closest('[data-demo]')) { if (await ask('Load demo data?', 'This replaces everything on this device with sample entries. Back up first if you need your data.', 'Load demo', true)) { state = S.demoState(); closeAllSheets(); ui.tab = 'home'; commit('Demo data loaded'); } }
-      if (ev.target.closest('[data-erase]')) { if (await ask('Erase everything?', 'All entries, accounts, snapshots and your PIN are deleted from this device. This can’t be undone.', 'Erase', true)) { S.clearAll(); state = S.defaultState(); ui.locked = false; closeAllSheets(); render(); toast('Erased'); } }
+      if (ev.target.closest('[data-erase]')) { if (await ask('Erase everything?', 'All entries, accounts, snapshots and your passcode are deleted from this device. This can’t be undone.', 'Erase', true)) { S.clearAll(); state = S.defaultState(); ui.locked = false; closeAllSheets(); render(); toast('Erased'); } }
     });
   }
   openSheet(title, html, { onMount: mount });
@@ -886,26 +889,26 @@ function renderLock() {
   if (!ui.locked || !state.settings.pinHash) { el?.remove(); if (lockKeyHandler) { removeEventListener('keydown', lockKeyHandler); lockKeyHandler = null; } return; }
   if (el) return;
   el = document.createElement('div'); el.className = 'lock'; el.id = 'lock';
-  el.innerHTML = `<div class="logo"><img src="icons/icon-192.png" alt="Ledger"></div><h2>Ledger</h2><div class="sub">Enter your PIN</div>${pinPad('lk')}`;
+  el.innerHTML = `<div class="logo"><img src="icons/icon-192.png" alt="Ledger"></div><h2>Ledger</h2><div class="sub">Enter passcode</div>${pinPad('lk')}`;
   document.body.append(el);
   let tries = 0;
   const press = wirePad(el, 'lk', async (pin) => {
     if ((await S.hashPin(pin)) === state.settings.pinHash) { ui.locked = false; X.play('unlock'); el.id = ''; el.classList.add('out'); setTimeout(() => el.remove(), 430); removeEventListener('keydown', lockKeyHandler); lockKeyHandler = null; return true; }
     X.play('error');
-    tries++; if (tries >= 3) $('.sub', el).textContent = 'Wrong PIN. Forgot it? Clear this site’s data, then restore a backup.'; else $('.sub', el).textContent = 'Wrong PIN, try again';
+    tries++; if (tries >= 3) $('.sub', el).textContent = 'Wrong passcode. Forgot it? Clear this site’s data, then restore a backup.'; else $('.sub', el).textContent = 'Wrong passcode, try again';
     return false;
   });
   lockKeyHandler = (e) => { if (/^[0-9]$/.test(e.key)) press(e.key); if (e.key === 'Backspace') press('del'); };
   addEventListener('keydown', lockKeyHandler);
 }
 function setPinFlow(done) {
-  const sh = openSheet('Set a PIN', `<div style="display:flex;flex-direction:column;align-items:center"><p class="lead" id="pin-msg">Choose 4 digits</p>${pinPad('sp')}</div>`);
+  const sh = openSheet('Set a passcode', `<div style="display:flex;flex-direction:column;align-items:center"><p class="lead" id="pin-msg">Choose 4 digits</p>${pinPad('sp')}</div>`);
   let first = null;
   wirePad(sh, 'sp', async (pin) => {
     if (!pin) { closeSheet(); return; }
     if (!first) { first = pin; $('#pin-msg', sh).textContent = 'Enter it again'; return true; }
     if (pin !== first) { X.play('error'); first = null; $('#pin-msg', sh).textContent = "Didn't match — choose 4 digits"; return false; }
-    state.settings.pinHash = await S.hashPin(pin); S.save(state); closeSheet(); toast('PIN set'); done?.(); return true;
+    state.settings.pinHash = await S.hashPin(pin); S.save(state); closeSheet(); toast('Passcode on. Tap the lock at the top to lock Ledger any time.'); done?.(); return true;
   }, { cancelLabel: 'Cancel' });
 }
 
@@ -924,6 +927,11 @@ document.addEventListener('click', async (ev) => {
     case 'open-entry': { const e = byId(state.entries, el.dataset.id); if (e) { if (inSheet) closeAllSheets(); entrySheet(e); } break; }
     case 'calc': openCalc(); break;
     case 'search': openSearch(); break;
+    case 'lock-now':
+      if (state.settings.pinHash) { closeAllSheets(); ui.locked = true; renderLock(); X.play('off'); }
+      else setPinFlow(() => render());
+      break;
+    case 'dismiss-passcode': try { localStorage.setItem('ledger.passcodeHint', '1'); } catch { /* ignore */ } render(); break;
     case 'toggle-hide': state.settings.hideAmounts = !state.settings.hideAmounts; commit(); break;
     case 'toggle-theme': {
       const flip = () => { state.settings.theme = state.settings.theme === 'light' ? 'dark' : 'light'; commit(); };
@@ -999,6 +1007,37 @@ function postRecurring() {
   if (due.length) { S.save(state); setTimeout(() => toast(`${due.length} recurring bill${due.length === 1 ? '' : 's'} added`), 600); }
 }
 
+// ================================================================ hide amounts
+// With "hide amounts" on, every run of digits on screen is wrapped so it can be blurred: balances,
+// counts, dates, times, totals in sentences, sheets, search results and toasts alike.
+// Digits you're typing into a field and the keys of the passcode pad / calculator stay readable.
+const DIGITS = /[₹+−-]?\d[\d,.:]*%?/g;
+const SKIP = '.dg, .pad, .keys, .key, input, textarea, select, script, style, svg, .money, [data-act=period]';
+function maskDigits(root) {
+  if (!state.settings.hideAmounts || !root) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => (/\d/.test(n.nodeValue) && !n.parentElement?.closest(SKIP)) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+  });
+  const nodes = []; while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const n of nodes) {
+    const frag = document.createDocumentFragment(); let last = 0; const t = n.nodeValue;
+    t.replace(DIGITS, (m, i) => {
+      if (i > last) frag.append(t.slice(last, i));
+      const sp = document.createElement('span'); sp.className = 'dg'; sp.textContent = m; frag.append(sp);
+      last = i + m.length; return m;
+    });
+    if (last < t.length) frag.append(t.slice(last));
+    n.replaceWith(frag);
+  }
+}
+new MutationObserver((muts) => {
+  if (!state.settings.hideAmounts) return;
+  for (const m of muts) for (const n of m.addedNodes) {
+    if (n.nodeType === 1 && !n.closest(SKIP)) maskDigits(n);
+    else if (n.nodeType === 3 && n.parentElement && !n.parentElement.closest(SKIP)) maskDigits(n.parentElement);
+  }
+}).observe(document.body, { childList: true, subtree: true });
+
 // ================================================================ keyboard
 // When the iPhone keyboard opens, the visible area shrinks but fixed elements stay put behind it.
 // Track the visible area so sheets sit just above the keyboard instead of jumping under it.
@@ -1016,5 +1055,25 @@ if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 postRecurring();
 render();
 checkPendingPay();
-if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js').catch(() => {});
+// ================================================================ updates
+// A home-screen app on iPhone usually resumes from memory instead of reloading, so it would
+// never notice a new version. Check whenever it comes to the front, and reload into the new
+// version as soon as it's installed (but never while you're halfway through filling in a sheet).
+let reloadWhenFree = false;
+function applyUpdate() { if (sheetStack.length) reloadWhenFree = true; else location.reload(); }
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((reg) => {
+    const check = () => reg.update().catch(() => {});
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+    setInterval(check, 30 * 60 * 1000);
+  }).catch(() => {});
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) applyUpdate(); });
+}
+// Say so once after an update, so it's clear which version is running.
+try {
+  const seen = localStorage.getItem('ledger.version');
+  if (seen && seen !== S.VERSION) setTimeout(() => toast(`Updated to version ${S.VERSION}`), 700);
+  localStorage.setItem('ledger.version', S.VERSION);
+} catch { /* ignore */ }
 window.__ledger = { get state() { return state; }, C, S, X };

@@ -643,3 +643,11 @@ body::before { filter: none; inset: -30%; }
 }
 .backdrop { touch-action: none; }
 html, body { overflow-x: hidden; }
+
+/* passcode + hide amounts (1.2.3) */
+.privacy .dg { filter: blur(6px); -webkit-user-select: none; user-select: none; transition: filter .2s; }
+.icon-btn.dim { color: var(--ink-3); }
+.install .ic-lock { width: 44px; height: 44px; border-radius: 12px; flex: none; display: grid; place-items: center; background: var(--g-bg-2); border: 1px solid var(--g-brd); }
+.install .ic-lock svg { width: 20px; height: 20px; }
+.top-actions { gap: 6px; }
+.top-actions .icon-btn { width: 40px; height: 40px; }

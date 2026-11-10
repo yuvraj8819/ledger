@@ -10,7 +10,7 @@ A private money ledger for cash, UPI and cards. It runs in the browser as an ins
 | **Ledger** | Today / 7 days / 30 days / month / all. Spent vs received, spending by category, money received by source, by account, and the full day-by-day list with cash, bank·card, spent, for others, received and transfer filters |
 | **Accounts** | Buckets such as Savings, Personal or Goa trip, each with in / out / left. Transfers between accounts, cash ↔ bank and card bill payments. People you've paid for and what they still owe, with a one-tap "paid me back". Totals by whose money it was |
 | **Pay** | Pay any UPI ID or pasted `upi://` link, or a saved payee. Opens the phone's UPI app with the amount filled in, then asks whether it went through and logs it. Upcoming recurring bills |
-| **Settings** | Money & bills (opening balances, monthly budget, recurring bills) · Accounts & tags (accounts, whose money, categories, people) · Rewind (off / weekly / monthly) · Privacy & lock (4-digit PIN, auto-lock, hide amounts, hidden entries) · Export & backup (CSV for Excel, JSON backup, restore) · This device (daily snapshots, demo data, erase) |
+| **Settings** | Money & bills (opening balances, monthly budget, recurring bills) · Accounts & tags (accounts, whose money, categories, people) · Rewind (off / weekly / monthly) · Privacy & lock (4-digit passcode, auto-lock, hide amounts, hidden entries) · Export & backup (CSV for Excel, JSON backup, restore) · This device (daily snapshots, demo data, erase) |
 
 Also: a **new entry** sheet for spent, received or *for someone* (with "they'll pay me back"), with "not from my balance" and "hide this entry" options. There's a **calculator** (the `=` button) whose answer becomes an entry, **search** by note, person, category or exact amount, undo after deleting, and light and dark themes.
 
@@ -27,6 +27,12 @@ Also: a **new entry** sheet for spent, received or *for someone* (with "they'll 
 - **Glass:** cards, the tab bar, sheets and the lock screen are translucent and blur a slow-moving colour wash behind them. The tokens are the `--g-*` variables in the "v1.1" block of `css/app.css`.
 - **Motion:** screens rise in card by card, the balance counts up, meters and chart bars grow, the tab pill slides, and the theme switch opens out from its button. All of it is off when the phone has "reduce motion" turned on.
 - **Sound:** short taps, a chime when you save, a brighter one for money received, a low note for delete, a buzz for mistakes and a run of notes on unlock. They're generated in `js/sfx.js` with Web Audio, so there are no audio files. Android also gets a small vibration. Turn it all off in Settings → Sounds & haptics.
+
+### Passcode, hiding and updates
+
+- **Passcode:** the lock button at the top locks Ledger straight away, or sets a passcode if there isn't one yet. With a passcode, Ledger also locks when it's been in the background (Settings → Privacy & lock sets how long).
+- **Hide amounts:** the eye button blurs every number on screen, including totals, counts, dates and numbers inside sentences, in sheets, search results and messages. The digits you're typing and the passcode/calculator keys stay readable.
+- **Updates:** the installed app checks for a new version whenever it comes back to the front, and reloads into it. It waits if you're in the middle of filling in a sheet, then shows "Updated to version …". The running version is at the bottom of Settings.
 
 ## Run it
 

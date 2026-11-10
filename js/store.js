@@ -3,7 +3,7 @@ import { isoDate, toPaise, pad, addDays } from './calc.js';
 
 const KEY = 'ledger.v1';
 const SNAP_KEY = 'ledger.snapshots';
-export const VERSION = '1.2.2';
+export const VERSION = '1.2.3';
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
