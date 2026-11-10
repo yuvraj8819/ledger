@@ -16,6 +16,7 @@ const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform 
 const STANDALONE = !!navigator.standalone || matchMedia('(display-mode: standalone)').matches;
 const hintKey = 'ledger.installHint';
 const showInstallHint = () => { if (STANDALONE) return false; try { return !localStorage.getItem(hintKey) && (IOS || /Android/.test(navigator.userAgent)); } catch { return false; } };
+const FINE = matchMedia('(pointer: fine)').matches; // mouse/trackpad, not a phone
 const TABS = ['home', 'ledger', 'accounts', 'pay', 'settings'];
 if (!TABS.includes(ui.tab)) ui.tab = 'home';
 
@@ -141,9 +142,18 @@ function topbar() {
 }
 function tabbar() {
   const t = (id, label) => `<button class="tab ${ui.tab === id ? 'on' : ''}" data-act="tab" data-tab="${id}" aria-label="${label}">${I[id]}<span>${label}</span></button>`;
-  return `<nav class="tabbar"><i class="ind" style="--i:${TABS.indexOf(ui.prevTab || ui.tab)}"></i>${t('home', 'Home')}${t('ledger', 'Ledger')}${t('accounts', 'Accounts')}${t('pay', 'Pay')}${t('settings', 'Settings')}</nav>
+  return `<nav class="tabbar"><i class="ind" style="--i:${TABS.indexOf(ui.tab)}"></i>${t('home', 'Home')}${t('ledger', 'Ledger')}${t('accounts', 'Accounts')}${t('pay', 'Pay')}${t('settings', 'Settings')}</nav>
     <button class="fab" data-act="new-entry" aria-label="New entry">${I.plus}</button>
     <button class="calc-fab" data-act="calc" aria-label="Calculator">=</button>`;
+}
+
+/** The tab bar and floating buttons are built once; later renders only move the highlight.
+ *  Rebuilding them made the frosted bar flash and the + button's glow restart on every tap. */
+function syncChrome() {
+  let nav = $('#chrome .tabbar');
+  if (!nav) { $('#chrome').innerHTML = tabbar(); nav = $('#chrome .tabbar'); }
+  $$('.tab', nav).forEach((b) => b.classList.toggle('on', b.dataset.tab === ui.tab));
+  $('.ind', nav).style.setProperty('--i', TABS.indexOf(ui.tab));
 }
 
 function render() {
@@ -159,10 +169,7 @@ function render() {
   const same = app.dataset.tab === ui.tab;
   app.innerHTML = topbar() + `<main class="view ${same ? (ui.fresh ? 'refresh' : '') : 'enter'}">${views[ui.tab]()}</main>`;
   app.dataset.tab = ui.tab;
-  $('#chrome').innerHTML = tabbar();
-  const ind = $('.tabbar .ind');
-  if (ind) { ind.getBoundingClientRect(); ind.style.setProperty('--i', TABS.indexOf(ui.tab)); } // slide from the old tab
-  ui.prevTab = ui.tab;
+  syncChrome();
   const tn = $('#total-num');
   if (tn) {
     const v = Number(tn.dataset.v);
@@ -355,12 +362,25 @@ function settingsView() {
 
 // ================================================================ sheets
 let sheetStack = [];
+// iOS Safari ignores overflow:hidden on body, so the page behind a sheet kept scrolling and jumping.
+// Pinning the body in place (and putting it back where it was) is the reliable fix.
+let lockedY = 0;
+function lockScroll() {
+  lockedY = window.scrollY;
+  Object.assign(document.body.style, { position: 'fixed', top: `-${lockedY}px`, left: '0', right: '0', width: '100%' });
+  document.body.classList.add('sheet-open');
+}
+function unlockScroll() {
+  Object.assign(document.body.style, { position: '', top: '', left: '', right: '', width: '' });
+  document.body.classList.remove('sheet-open');
+  window.scrollTo(0, lockedY);
+}
 function openSheet(title, body, { onMount, wide } = {}) {
   const bd = document.createElement('div'); bd.className = 'backdrop';
   const sh = document.createElement('div'); sh.className = 'sheet'; sh.setAttribute('role', 'dialog'); sh.setAttribute('aria-modal', 'true'); sh.setAttribute('aria-label', title);
   sh.innerHTML = `<div class="grab"></div><div class="sheet-head"><h3>${esc(title)}</h3><button class="x" data-act="close-sheet" aria-label="Close">${I.x}</button></div><div class="sheet-body">${body}</div>`;
   document.body.append(bd, sh);
-  document.body.style.overflow = 'hidden';
+  if (!sheetStack.length) lockScroll();
   requestAnimationFrame(() => { bd.classList.add('show'); sh.classList.add('show'); });
   bd.addEventListener('click', () => closeSheet());
   const rec = { bd, sh };
@@ -375,8 +395,8 @@ function closeSheet() {
   rec.onClose?.();
   X.play('close');
   rec.bd.classList.remove('show'); rec.sh.classList.remove('show');
-  setTimeout(() => { rec.bd.remove(); rec.sh.remove(); }, 320);
-  if (!sheetStack.length) document.body.style.overflow = '';
+  setTimeout(() => { rec.bd.remove(); rec.sh.remove(); }, 480);
+  if (!sheetStack.length) unlockScroll();
 }
 function closeAllSheets() { while (sheetStack.length) closeSheet(); }
 function replaceSheet(title, body, opts) { const r = sheetStack.pop(); if (r) { r.bd.remove(); r.sh.remove(); } const sh = openSheet(title, body, opts); sh.classList.add('show'); sheetStack.at(-1).bd.classList.add('show'); return sh; }
@@ -393,7 +413,7 @@ function ask(title, text, ok = 'OK', danger = false) {
 function prompt1(title, label, value = '', { placeholder = '', inputmode = 'text', ok = 'Save' } = {}) {
   return new Promise((resolve) => {
     const sh = openSheet(title, `<div class="field" style="margin-top:0"><label class="eyebrow" for="p1">${esc(label)}</label><input class="input" id="p1" value="${esc(value)}" placeholder="${esc(placeholder)}" inputmode="${inputmode}"></div><div class="btn-row"><button class="btn ghost" data-r="0">Cancel</button><button class="btn accent" data-r="1">${esc(ok)}</button></div>`);
-    const inp = $('#p1', sh); setTimeout(() => inp.focus(), 300);
+    const inp = $('#p1', sh); if (FINE) setTimeout(() => inp.focus(), 300);
     let done = false;
     const finish = (v) => { if (done) return; done = true; if (sheetStack.at(-1)?.sh === sh) closeSheet(); resolve(v); };
     inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') finish(inp.value.trim()); });
@@ -450,18 +470,23 @@ function entrySheet(existing, preset = {}) {
     e.note = $('#f-note', sh)?.value.trim() || ''; e.date = $('#f-date', sh)?.value || today(); e.time = $('#f-time', sh)?.value || '';
   };
   const redraw = () => { pull(); const y = sh.scrollTop; bodyEl.innerHTML = body(); sh.scrollTop = y; };
-  if (!existing) setTimeout(() => $('#f-amt', sh)?.focus(), 350);
+  if (!existing) if (FINE) setTimeout(() => $('#f-amt', sh)?.focus(), 350);
 
   sh.addEventListener('click', async (ev) => {
     const pick = ev.target.closest('[data-pick]');
     if (pick) {
       const k = pick.dataset.pick, v = pick.dataset.v || null;
       e[k] = (k !== 'type' && k !== 'method' && k !== 'accountId' && e[k] === v) ? null : v;
-      if (k === 'type' && v !== 'forSomeone') { e.expectBack = false; }
-      return redraw();
+      if (k === 'type') { if (v !== 'forSomeone') e.expectBack = false; return redraw(); }
+      $$(`[data-pick="${k}"]`, sh).forEach((b) => b.classList.toggle('on', (b.dataset.v || null) === e[k]));
+      return;
     }
     const tg = ev.target.closest('[data-toggle]');
-    if (tg) { e[tg.dataset.toggle] = !e[tg.dataset.toggle]; return redraw(); }
+    if (tg) {
+      const k = tg.dataset.toggle; e[k] = !e[k];
+      tg.classList.toggle('on', e[k]); $('.box', tg).innerHTML = e[k] ? I.check : '';
+      return;
+    }
     const act = ev.target.closest('[data-act]')?.dataset.act;
     if (act === 'add-inline') {
       const kind = ev.target.closest('[data-act]').dataset.kind;
@@ -583,7 +608,7 @@ function openSearch() {
       : `<p class="faint" style="text-align:center;margin:30px 0">No matches.</p>`;
   };
   inp.addEventListener('input', run); run();
-  setTimeout(() => inp.focus(), 300);
+  if (FINE) setTimeout(() => inp.focus(), 300);
 }
 
 // ---------------------------------------------------------------- accounts
@@ -610,7 +635,7 @@ function payFlow(target) {
     ${IOS ? `<div class="eyebrow" style="margin:20px 2px 8px">Pay with</div><div class="opts three">${['gpay', 'phonepe', 'paytm'].map((a) => `<button class="btn accent" data-upi="${a}" style="padding:14px 4px;font-size:14px">${C.UPI_APPS[a].label}</button>`).join('')}</div><button class="btn ghost" data-log style="margin-top:10px">Just log it</button>`
       : `<div class="btn-row"><button class="btn ghost" data-log>Just log it</button><button class="btn accent" data-upi="default">Open UPI app</button></div>`}
     <p class="faint" style="font-size:12.5px;text-align:center;margin-top:14px">Your UPI app does the paying. Ledger never sees your PIN or bank details.</p>`);
-  setTimeout(() => $('#pay-amt', sh).focus(), 300);
+  if (FINE) setTimeout(() => $('#pay-amt', sh).focus(), 300);
   const build = () => ({ id: S.uid(), createdAt: Date.now(), type: 'spent', method: 'upi', date: today(), time: nowTime(),
     amount: C.toPaise(($('#pay-amt', sh).value || '').replace(/,/g, '')), note: $('#pay-note', sh).value.trim() || target.name || target.vpa,
     personId: target.personId || null, categoryId: p.categoryId, accountId: p.accountId });
@@ -972,6 +997,18 @@ function postRecurring() {
     r.lastPosted = d.month;
   }
   if (due.length) { S.save(state); setTimeout(() => toast(`${due.length} recurring bill${due.length === 1 ? '' : 's'} added`), 600); }
+}
+
+// ================================================================ keyboard
+// When the iPhone keyboard opens, the visible area shrinks but fixed elements stay put behind it.
+// Track the visible area so sheets sit just above the keyboard instead of jumping under it.
+if (window.visualViewport) {
+  const vv = window.visualViewport, root = document.documentElement.style;
+  const fit = () => {
+    root.setProperty('--kb', `${Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop))}px`);
+    root.setProperty('--vvh', `${Math.round(vv.height)}px`);
+  };
+  vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); fit();
 }
 
 // ================================================================ boot

@@ -599,3 +599,27 @@ select.input option { background: var(--bg-2); color: var(--ink); }
 .install .x svg { width: 15px; height: 15px; }
 .welcome .logo, .lock .logo { background: none; box-shadow: none; padding: 0; overflow: hidden; }
 .welcome .logo img, .lock .logo img { width: 100%; height: 100%; border-radius: 22px; display: block; box-shadow: 0 14px 40px color-mix(in srgb, var(--accent) 40%, transparent); }
+
+/* =====================================================================
+   v1.2.1 — smooth on iPhone
+   Live blur only on the floating layers (tab bar, buttons, sheets, toast,
+   lock). Cards in the scrolling page get a see-through tint instead: dozens
+   of blurred layers moving under a blurred tab bar is what made it stutter.
+   ===================================================================== */
+#app { overflow-x: clip; }
+.card, .stat, .icon-btn, .row { backdrop-filter: none; -webkit-backdrop-filter: none; }
+.card, .stat, .row { background: linear-gradient(160deg, var(--g-bg-2), var(--g-bg)); }
+.icon-btn { background: var(--g-bg-2); }
+.icon-btn.on { background: var(--ink); }
+body::before { filter: none; inset: -30%; }
+.backdrop { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(0, 0, 0, .5); }
+.tabbar { will-change: transform; }
+/* sheet: rides above the keyboard and never taller than what's visible */
+.sheet {
+  bottom: var(--kb, 0px); will-change: transform; -webkit-overflow-scrolling: touch;
+  max-height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top) - 10px);
+  transition: transform .45s var(--out), bottom .2s ease;
+}
+/* floating buttons step aside while a sheet is open */
+#chrome > * { transition: opacity .25s ease; }
+.sheet-open #chrome > * { opacity: 0; pointer-events: none; }
