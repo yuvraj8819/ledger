@@ -3,7 +3,7 @@ import { isoDate, toPaise, pad, addDays } from './calc.js';
 
 const KEY = 'ledger.v1';
 const SNAP_KEY = 'ledger.snapshots';
-export const VERSION = '1.0.0';
+export const VERSION = '1.1.0';
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
@@ -13,7 +13,7 @@ export function defaultState() {
     settings: {
       theme: 'dark', hideAmounts: false, pinHash: null, lockAfter: 60,
       openingCash: 0, openingBank: 0, monthlyBudget: 0,
-      rewind: 'weekly', lastRewind: null, showHidden: false, onboarded: false, name: '',
+      rewind: 'weekly', lastRewind: null, showHidden: false, sound: true, onboarded: false, name: '',
     },
     accounts: [{ id: 'acc_savings', name: 'Savings' }, { id: 'acc_personal', name: 'Personal' }],
     sources: [

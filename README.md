@@ -22,6 +22,12 @@ Also: a **new entry** sheet for spent, received or *for someone* (with "they'll 
 - **Accounts** are buckets inside your total. Opening balances land in the first account. Account totals equal the Home total, minus any credit card due.
 - Amounts are stored as whole paise, so totals never drift.
 
+### Look, motion and sound
+
+- **Glass:** cards, the tab bar, sheets and the lock screen are translucent and blur a slow-moving colour wash behind them. The tokens are the `--g-*` variables in the "v1.1" block of `css/app.css`.
+- **Motion:** screens rise in card by card, the balance counts up, meters and chart bars grow, the tab pill slides, and the theme switch opens out from its button. All of it is off when the phone has "reduce motion" turned on.
+- **Sound:** short taps, a chime when you save, a brighter one for money received, a low note for delete, a buzz for mistakes and a run of notes on unlock. They're generated in `js/sfx.js` with Web Audio, so there are no audio files. Android also gets a small vibration. Turn it all off in Settings → Sounds & haptics.
+
 ## Run it
 
 Any static file server works. The bundled one turns caching off so edits show up on reload:
@@ -46,6 +52,7 @@ js/calc.js            pure money logic, no DOM; everything the tests cover
 js/store.js           saved data shape, localStorage, snapshots, backups, PIN hashing, demo data
 js/app.js             screens, sheets, events
 js/icons.js           inline SVG icons
+js/sfx.js             sound effects (Web Audio) and haptics
 sw.js                 offline cache (bump VERSION when shipping changes)
 manifest.webmanifest  install metadata
 scripts/serve.py      no-cache dev server

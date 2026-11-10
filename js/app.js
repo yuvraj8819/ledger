@@ -1,6 +1,7 @@
 import * as C from './calc.js';
 import * as S from './store.js';
 import { I } from './icons.js';
+import * as X from './sfx.js';
 
 // ================================================================ state
 let state = S.load();
@@ -14,11 +15,27 @@ const ui = {
 const TABS = ['home', 'ledger', 'accounts', 'pay', 'settings'];
 if (!TABS.includes(ui.tab)) ui.tab = 'home';
 
-function commit(msg) {
+function commit(msg, sound = 'success') {
   S.save(state);
   S.autoSnapshot(state);
+  if (msg) ui.fresh = true;
   render();
-  if (msg) toast(msg);
+  if (msg) { toast(msg); X.play(sound); }
+}
+/** A toast for "you missed something", with the error sound. */
+function warn(msg) { toast(msg); X.play('error'); }
+function countUp(el, from, to) {
+  if (from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const t0 = performance.now(), dur = 750;
+  const step = (now) => {
+    if (!el.isConnected) return;
+    const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 4);
+    el.textContent = nf0.format(Math.round(from + (to - from) * e));
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+  // frames pause when the app is in the background; never leave a half-counted number
+  setTimeout(() => { if (el.isConnected) el.textContent = nf0.format(to); }, dur + 60);
 }
 
 // ================================================================ helpers
@@ -120,7 +137,7 @@ function topbar() {
 }
 function tabbar() {
   const t = (id, label) => `<button class="tab ${ui.tab === id ? 'on' : ''}" data-act="tab" data-tab="${id}" aria-label="${label}">${I[id]}<span>${label}</span></button>`;
-  return `<nav class="tabbar">${t('home', 'Home')}${t('ledger', 'Ledger')}${t('accounts', 'Accounts')}${t('pay', 'Pay')}${t('settings', 'Settings')}</nav>
+  return `<nav class="tabbar"><i class="ind" style="--i:${TABS.indexOf(ui.prevTab || ui.tab)}"></i>${t('home', 'Home')}${t('ledger', 'Ledger')}${t('accounts', 'Accounts')}${t('pay', 'Pay')}${t('settings', 'Settings')}</nav>
     <button class="fab" data-act="new-entry" aria-label="New entry">${I.plus}</button>
     <button class="calc-fab" data-act="calc" aria-label="Calculator">=</button>`;
 }
@@ -128,6 +145,7 @@ function tabbar() {
 function render() {
   const s = state.settings;
   document.documentElement.dataset.theme = s.theme;
+  X.setEnabled(s.sound !== false);
   document.body.classList.toggle('privacy', !!s.hideAmounts);
   $('meta[name="theme-color"]')?.setAttribute('content', s.theme === 'light' ? '#f3f2ee' : '#08090a');
   const app = $('#app');
@@ -135,9 +153,19 @@ function render() {
   const views = { home: homeView, ledger: ledgerView, accounts: accountsView, pay: payView, settings: settingsView };
   const scroll = window.scrollY;
   const same = app.dataset.tab === ui.tab;
-  app.innerHTML = topbar() + `<main class="view" ${same ? 'style="animation:none"' : ''}>${views[ui.tab]()}</main>`;
+  app.innerHTML = topbar() + `<main class="view ${same ? (ui.fresh ? 'refresh' : '') : 'enter'}">${views[ui.tab]()}</main>`;
   app.dataset.tab = ui.tab;
   $('#chrome').innerHTML = tabbar();
+  const ind = $('.tabbar .ind');
+  if (ind) { ind.getBoundingClientRect(); ind.style.setProperty('--i', TABS.indexOf(ui.tab)); } // slide from the old tab
+  ui.prevTab = ui.tab;
+  const tn = $('#total-num');
+  if (tn) {
+    const v = Number(tn.dataset.v);
+    if (!same) countUp(tn, 0, v); else if (ui.lastTotal != null && ui.lastTotal !== v) countUp(tn, ui.lastTotal, v);
+    ui.lastTotal = v;
+  }
+  ui.fresh = false;
   if (same) window.scrollTo(0, scroll);
   renderLock();
 }
@@ -182,7 +210,7 @@ function homeView() {
   return `
   <section class="card hero">
     <div class="eyebrow">Total balance</div>
-    <div class="total num money">${b.total < 0 ? '−' : ''}<span class="cur">₹</span>${nf0.format(Math.abs(Math.round(b.total / 100)))}</div>
+    <div class="total num money">${b.total < 0 ? '−' : ''}<span class="cur">₹</span><span id="total-num" data-v="${Math.abs(Math.round(b.total / 100))}">${nf0.format(Math.abs(Math.round(b.total / 100)))}</span></div>
     <div class="delta">${month.count ? `${month.net >= 0 ? 'Up' : 'Down'} ${money(Math.abs(month.net))} this month` : 'Nothing in or out this month yet'}</div>
     <div class="split">
       <div class="pill"><div class="eyebrow"><i class="dot d-cash"></i>Cash</div><div class="v">${money(b.cash)}</div></div>
@@ -316,6 +344,7 @@ function settingsView() {
     ${item('privacy', 'lock', 'Privacy & lock', 'PIN, hide amounts, hidden entries')}
     ${item('export', 'download', 'Export & backup', 'Excel, backup file, restore')}
     ${item('device', 'device', 'This device', 'Snapshots, demo data, erase, version')}
+    <section class="card tap" data-act="toggle-sound"><div class="set-row"><div class="ic">${I.sound}</div><div><div class="t">Sounds & haptics</div><div class="s">Soft taps and chimes as you use the app</div></div><span class="switch ${state.settings.sound !== false ? 'on' : ''}" style="margin-left:auto"></span></div></section>
     <p class="foot-note">Everything lives on this device only — no cloud, no account. Keep a backup now and then.</p>`;
 }
 
@@ -331,6 +360,7 @@ function openSheet(title, body, { onMount, wide } = {}) {
   bd.addEventListener('click', () => closeSheet());
   const rec = { bd, sh };
   sheetStack.push(rec);
+  X.play('open');
   onMount?.(sh);
   return sh;
 }
@@ -338,6 +368,7 @@ function closeSheet() {
   const rec = sheetStack.pop();
   if (!rec) return;
   rec.onClose?.();
+  X.play('close');
   rec.bd.classList.remove('show'); rec.sh.classList.remove('show');
   setTimeout(() => { rec.bd.remove(); rec.sh.remove(); }, 320);
   if (!sheetStack.length) document.body.style.overflow = '';
@@ -437,14 +468,14 @@ function entrySheet(existing, preset = {}) {
       openCalc(e.amount ? String(e.amount / 100) : '', (v) => { e.amount = C.toPaise(v); bodyEl.innerHTML = body(); });
     } else if (act === 'save-entry') {
       pull();
-      if (!(e.amount > 0)) { $('.amount-box', sh).style.borderColor = 'var(--accent)'; $('#f-amt', sh).focus(); return toast('Enter an amount'); }
-      if (e.type === 'forSomeone' && !e.personId) return toast('Pick who it was for');
+      if (!(e.amount > 0)) { $('.amount-box', sh).style.borderColor = 'var(--accent)'; $('#f-amt', sh).focus(); return warn('Enter an amount'); }
+      if (e.type === 'forSomeone' && !e.personId) return warn('Pick who it was for');
       if (e.type === 'received') { e.offBalance = false; e.categoryId = null; }
       if (e.type !== 'forSomeone') e.expectBack = false;
       if (existing) Object.assign(byId(state.entries, existing.id), e);
       else state.entries.push({ ...e, id: S.uid(), createdAt: Date.now() });
       closeSheet();
-      commit(existing ? 'Saved' : `${e.type === 'received' ? 'Received' : 'Spent'} ${rs(e.amount)} logged`);
+      commit(existing ? 'Saved' : `${e.type === 'received' ? 'Received' : 'Spent'} ${rs(e.amount)} logged`, e.type === 'received' ? 'income' : 'success');
     } else if (act === 'delete-entry') {
       deleteEntry(existing.id);
     }
@@ -457,6 +488,7 @@ function deleteEntry(id) {
   const [removed] = state.entries.splice(idx, 1);
   closeAllSheets();
   commit();
+  X.play('delete');
   toast('Entry deleted', { label: 'Undo', run: () => { state.entries.push(removed); commit('Restored'); } });
 }
 
@@ -486,8 +518,8 @@ function transferSheet(existing) {
     else if (g.hasAttribute('data-del')) deleteEntry(existing.id);
     else {
       pull();
-      if (!(t.amount > 0)) return toast('Enter an amount');
-      if (t.kind === 'account' && t.accountId === t.toAccountId) return toast('Pick two different accounts');
+      if (!(t.amount > 0)) return warn('Enter an amount');
+      if (t.kind === 'account' && t.accountId === t.toAccountId) return warn('Pick two different accounts');
       if (t.kind !== 'account') { delete t.toAccountId; t.accountId = t.accountId || state.accounts[0]?.id; }
       if (existing) Object.assign(byId(state.entries, existing.id), t);
       else state.entries.push({ ...t, id: S.uid(), createdAt: Date.now() });
@@ -513,8 +545,8 @@ function openCalc(initial = '', onUse) {
   sh.addEventListener('click', (ev) => {
     const k = ev.target.closest('[data-k]')?.dataset.k;
     if (ev.target.closest('[data-use]')) {
-      let v; try { v = C.evaluate(expr); } catch { return toast('Check the sum'); }
-      if (!(v > 0)) return toast('Result must be more than ₹0');
+      let v; try { v = C.evaluate(expr); } catch { return warn('Check the sum'); }
+      if (!(v > 0)) return warn('Result must be more than ₹0');
       closeSheet();
       if (onUse) onUse(v); else entrySheet(null, { amount: C.toPaise(v) });
       return;
@@ -522,7 +554,7 @@ function openCalc(initial = '', onUse) {
     if (!k) return;
     if (k === 'C') expr = '';
     else if (k === '⌫') expr = expr.slice(0, -1);
-    else if (k === '=') { try { expr = String(C.evaluate(expr)); } catch { toast('Check the sum'); } }
+    else if (k === '=') { try { expr = String(C.evaluate(expr)); } catch { warn('Check the sum'); } }
     else expr += k;
     draw(sh);
   });
@@ -584,7 +616,7 @@ function payFlow(target) {
     const isUpi = ev.target.closest('[data-upi]'), isLog = ev.target.closest('[data-log]');
     if (!isUpi && !isLog) return;
     const entry = build();
-    if (!(entry.amount > 0)) return toast('Enter an amount');
+    if (!(entry.amount > 0)) return warn('Enter an amount');
     closeSheet();
     if (isLog) { state.entries.push(entry); return commit(`Paid ${rs(entry.amount)} logged`); }
     try { sessionStorage.setItem('ledger.pendingPay', JSON.stringify(entry)); } catch { /* ignore */ }
@@ -743,7 +775,7 @@ function billSheet() {
     if (a) { b.accountId = a.dataset.a; $$('[data-a]', sh).forEach((x) => x.classList.toggle('on', x === a)); }
     if (ev.target.closest('[data-save-bill]')) {
       b.name = $('#b-name', sh).value.trim(); b.amount = C.toPaise(($('#b-amt', sh).value || '').replace(/,/g, '')); b.day = Math.max(1, Math.min(31, Number($('#b-day', sh).value) || 1));
-      if (!b.name || !(b.amount > 0)) return toast('Add a name and an amount');
+      if (!b.name || !(b.amount > 0)) return warn('Add a name and an amount');
       const t = today(); const thisMonth = C.monthKey(t);
       const startMonth = b.day >= Number(t.slice(8)) ? thisMonth : C.nextMonth(thisMonth);
       state.recurring.push({ ...b, id: S.uid(), lastPosted: null, startMonth });
@@ -827,7 +859,8 @@ function renderLock() {
   document.body.append(el);
   let tries = 0;
   const press = wirePad(el, 'lk', async (pin) => {
-    if ((await S.hashPin(pin)) === state.settings.pinHash) { ui.locked = false; el.remove(); removeEventListener('keydown', lockKeyHandler); lockKeyHandler = null; return true; }
+    if ((await S.hashPin(pin)) === state.settings.pinHash) { ui.locked = false; X.play('unlock'); el.id = ''; el.classList.add('out'); setTimeout(() => el.remove(), 430); removeEventListener('keydown', lockKeyHandler); lockKeyHandler = null; return true; }
+    X.play('error');
     tries++; if (tries >= 3) $('.sub', el).textContent = 'Wrong PIN. Forgot it? Clear this site’s data, then restore a backup.'; else $('.sub', el).textContent = 'Wrong PIN, try again';
     return false;
   });
@@ -840,7 +873,7 @@ function setPinFlow(done) {
   wirePad(sh, 'sp', async (pin) => {
     if (!pin) { closeSheet(); return; }
     if (!first) { first = pin; $('#pin-msg', sh).textContent = 'Enter it again'; return true; }
-    if (pin !== first) { first = null; $('#pin-msg', sh).textContent = "Didn't match — choose 4 digits"; return false; }
+    if (pin !== first) { X.play('error'); first = null; $('#pin-msg', sh).textContent = "Didn't match — choose 4 digits"; return false; }
     state.settings.pinHash = await S.hashPin(pin); S.save(state); closeSheet(); toast('PIN set'); done?.(); return true;
   }, { cancelLabel: 'Cancel' });
 }
@@ -861,7 +894,12 @@ document.addEventListener('click', async (ev) => {
     case 'calc': openCalc(); break;
     case 'search': openSearch(); break;
     case 'toggle-hide': state.settings.hideAmounts = !state.settings.hideAmounts; commit(); break;
-    case 'toggle-theme': state.settings.theme = state.settings.theme === 'light' ? 'dark' : 'light'; commit(); break;
+    case 'toggle-theme': {
+      const flip = () => { state.settings.theme = state.settings.theme === 'light' ? 'dark' : 'light'; commit(); };
+      if (document.startViewTransition) { const vt = document.startViewTransition(flip); vt.ready?.catch(() => {}); vt.finished?.catch(() => {}); } else flip();
+      break;
+    }
+    case 'toggle-sound': state.settings.sound = state.settings.sound === false; S.save(state); render(); X.play('success'); break;
     case 'close-sheet': if (!el.closest('.sheet-body') || el.classList.contains('btn')) closeSheet(); break;
     case 'safe-help': {
       const sf = C.safeToSpend(state);
@@ -881,14 +919,14 @@ document.addEventListener('click', async (ev) => {
       const ps = C.peopleSummary(state).find((x) => x.id === p.id);
       const v = await prompt1(`${p.name} paid you back`, 'Amount received', String(ps.owes / 100), { inputmode: 'decimal', ok: 'Log it' });
       const amt = v && C.toPaise(v.replace(/,/g, ''));
-      if (amt > 0) { state.entries.push({ id: S.uid(), createdAt: Date.now(), type: 'received', settles: true, personId: p.id, amount: amt, method: 'upi', date: today(), time: nowTime(), accountId: state.accounts[0].id, note: `${p.name} paid back` }); commit(`${rs(amt)} from ${p.name} logged`); }
+      if (amt > 0) { state.entries.push({ id: S.uid(), createdAt: Date.now(), type: 'received', settles: true, personId: p.id, amount: amt, method: 'upi', date: today(), time: nowTime(), accountId: state.accounts[0].id, note: `${p.name} paid back` }); commit(`${rs(amt)} from ${p.name} logged`, 'income'); }
       break;
     }
     case 'pay-person': { const p = byId(state.people, el.dataset.id); payFlow({ vpa: p.vpa, name: p.name, personId: p.id }); break; }
     case 'pay-new': {
       const raw = $('#pay-vpa').value;
       const parsed = C.parseUpi(raw);
-      if (!parsed) { toast('Enter a UPI ID like name@okaxis'); $('#pay-vpa').focus(); break; }
+      if (!parsed) { warn('Enter a UPI ID like name@okaxis'); $('#pay-vpa').focus(); break; }
       const known = state.people.find((p) => p.vpa && p.vpa.toLowerCase() === parsed.vpa.toLowerCase());
       payFlow({ ...parsed, name: parsed.name || known?.name || '', personId: known?.id });
       break;
@@ -904,6 +942,12 @@ document.addEventListener('click', async (ev) => {
     case 'demo': state = S.demoState(); commit('Demo data loaded'); window.scrollTo(0, 0); break;
   }
 });
+// small taps for pickers, keys and tabs (bigger moments play their own sound)
+document.addEventListener('click', (ev) => {
+  const t = ev.target.closest('.key, .pad button, .tab, .chip, .opt, .seg button, .cat, .check, [data-switch], .icon-btn');
+  if (!t) return;
+  X.play(t.matches('.key, .pad button') ? 'key' : t.matches('.tab') ? 'tab' : t.matches('.check, [data-switch]') ? (t.querySelector('.on, .switch.on') || t.classList.contains('on') ? 'off' : 'on') : 'tick');
+}, true);
 addEventListener('keydown', (e) => { if (e.key === 'Escape' && sheetStack.length) closeSheet(); });
 addEventListener('hashchange', () => { const t = location.hash.slice(1); if (TABS.includes(t) && t !== ui.tab) { closeAllSheets(); ui.tab = t; render(); window.scrollTo(0, 0); } });
 document.addEventListener('visibilitychange', () => {
@@ -929,4 +973,4 @@ postRecurring();
 render();
 checkPendingPay();
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js').catch(() => {});
-window.__ledger = { get state() { return state; }, C, S };
+window.__ledger = { get state() { return state; }, C, S, X };
