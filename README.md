@@ -9,6 +9,7 @@ A private money ledger for cash, UPI and cards. It runs in the browser as an ins
 | **Home** | Total balance split into cash and bank·UPI (plus credit card due), **safe to spend today** with a 7-day spending chart, this month's spent / for others / received, people who owe you, rewind prompt, recent entries |
 | **Ledger** | Today / 7 days / 30 days / month / all. Spent vs received, spending by category, money received by source, by account, and the full day-by-day list with cash, bank·card, spent, for others, received and transfer filters |
 | **Accounts** | Buckets such as Savings, Personal or Goa trip, each with in / out / left. Transfers between accounts, cash ↔ bank and card bill payments. People you've paid for and what they still owe, with a one-tap "paid me back". Totals by whose money it was |
+| **Health** | Today's steps (from your Apple Watch via Apple Health) and the food you've logged, the money the day will earn or cost, this month's earned / lost, and past days. Walk back through days to fix steps or meals |
 | **Pay** | Pay any UPI ID or pasted `upi://` link, or a saved payee. Opens the phone's UPI app with the amount filled in, then asks whether it went through and logs it. Upcoming recurring bills |
 | **Settings** | Money & bills (opening balances, monthly budget, recurring bills) · Accounts & tags (accounts, whose money, categories, people) · Rewind (off / weekly / monthly) · Privacy & lock (4-digit passcode, auto-lock, hide amounts, hidden entries) · Export & backup (CSV for Excel, JSON backup, restore) · This device (daily snapshots, demo data, erase) |
 
@@ -21,6 +22,23 @@ Also: a **new entry** sheet for spent, received or *for someone* (with "they'll 
 - **Safe to spend today**: with a monthly budget, it's what's left of the budget split over the days left in the month, today included. Without a budget, it's your balance at the start of today split the same way. Spending under today's figure raises tomorrow's.
 - **Accounts** are buckets inside your total. Opening balances land in the first account. Account totals equal the Home total, minus any credit card due.
 - Amounts are stored as whole paise, so totals never drift.
+
+### Health: steps and food that move money
+
+Each finished day settles into the ledger as entries dated that day at 11:59 PM:
+
+| The day | Ledger |
+|---|---|
+| 10,000+ steps | **+₹500** (received, "Fitness reward") |
+| Under 10,000 steps | **−₹1,000** (spent, "Fitness penalty") |
+| A cheat meal, or calories ≥ goal + 500 | **−₹1,000** |
+| Missed steps *and* overate | still one **−₹1,000** |
+
+Hitting the steps and overeating on the same day gives +₹500 and −₹1,000. All numbers are editable in Health → Goals & money. Rule changes count from today on, and settled days keep the rules they were settled with. Editing a past day's steps or meals re-settles that day. Settling runs on open, on return to the app and at midnight, and never posts a day twice.
+
+**Steps from Apple Watch.** A website can't read Apple Health, so an iPhone Shortcut reads the day's steps and copies `2026-11-10=12034` to the clipboard, and **Paste from Health** reads it in. A daily 11:59 PM automation runs the Shortcut. The full steps are in Health → Connect Apple Watch. A `#steps=2026-11-10=12034` link also works where the link opens the installed app (Android, desktop). On iPhone the home-screen app keeps its own storage apart from Safari, which is why it pastes instead.
+
+A day with no step count waits. So does a count taken before 11:30 PM that's under the goal, because that count isn't final yet. Nothing is fined without a final count.
 
 ### Look, motion and sound
 
@@ -49,7 +67,7 @@ On iPhone, Pay offers GPay, PhonePe and Paytm buttons, because iOS doesn't route
 
 ## Tests
 
-Open http://127.0.0.1:5178/tests/ with the server running. The page runs about 20 checks on the money logic: balances, transfers, safe to spend, people owed, recurring bills, rewind, calculator, UPI links, CSV and backups, and prints a pass/fail list.
+Open http://127.0.0.1:5178/tests/ with the server running. The page runs about 35 checks on the money and health logic: balances, transfers, safe to spend, people owed, recurring bills, rewind, calculator, UPI links, CSV and backups, and prints a pass/fail list.
 
 ## Code map
 
@@ -57,6 +75,7 @@ Open http://127.0.0.1:5178/tests/ with the server running. The page runs about 2
 index.html            page shell
 css/app.css           all styles; theme tokens at the top (dark default, [data-theme=light])
 js/calc.js            pure money logic, no DOM; everything the tests cover
+js/health.js          steps + food rules: verdicts, settling into entries, step parsing (pure, tested)
 js/store.js           saved data shape, localStorage, snapshots, backups, PIN hashing, demo data
 js/app.js             screens, sheets, events
 js/icons.js           inline SVG icons
@@ -79,7 +98,9 @@ tests/index.html      browser test runner
   recurring:  [{ id, name, amount, method, accountId, categoryId, day, lastPosted, startMonth, paused? }],
   entries:    [{ id, type: 'spent'|'received'|'forSomeone'|'transfer', amount /* paise */, date: 'YYYY-MM-DD', time: 'HH:MM',
                  method: 'cash'|'upi'|'debit'|'credit', accountId, toAccountId?, kind?: 'account'|'toBank'|'toCash'|'cardBill',
-                 sourceId?, categoryId?, personId?, note, offBalance?, hidden?, expectBack?, settles?, recurringId? }]
+                 sourceId?, categoryId?, personId?, note, offBalance?, hidden?, expectBack?, settles?, recurringId?, health?: { day, kind: 'reward'|'penalty' } }],
+  health:     { enabled, startDate, stepGoal, calorieGoal, overMargin, reward, penalty /* paise */, method, accountId,
+                days: { 'YYYY-MM-DD': { steps, stepsAt, stepsFrom, meals: [{ id, name, kcal, time, cheat }], rules? } } }
 }
 ```
 

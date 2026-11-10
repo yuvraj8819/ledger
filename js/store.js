@@ -1,9 +1,10 @@
 // State, persistence, snapshots. Everything lives in this browser's localStorage.
 import { isoDate, toPaise, pad, addDays } from './calc.js';
+import { defaultHealth } from './health.js';
 
 const KEY = 'ledger.v1';
 const SNAP_KEY = 'ledger.snapshots';
-export const VERSION = '1.2.4';
+export const VERSION = '1.3.0';
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
@@ -29,6 +30,7 @@ export function defaultState() {
     people: [],
     recurring: [],
     entries: [],
+    health: defaultHealth(),
   };
 }
 
@@ -38,6 +40,7 @@ function migrate(s) {
     ...d, ...s,
     settings: { ...d.settings, ...(s.settings || {}) },
     entries: Array.isArray(s.entries) ? s.entries : [],
+    health: { ...d.health, ...(s.health || {}), days: (s.health && s.health.days) || {} },
   };
 }
 

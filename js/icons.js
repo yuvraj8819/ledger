@@ -1,6 +1,10 @@
 const s = (d, extra = '') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" ${extra}>${d}</svg>`;
 
 export const I = {
+  health: s('<path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 0 0-7.1 7.1L12 21.5l8.8-8.8a5 5 0 0 0 0-7.1z"/><path d="M3.5 12h4l2-3 3 6 2-3h6"/>'),
+  steps: s('<path d="M8 3c1.7 0 2.5 1.8 2.5 4S9.6 12 8 12 5.5 9.2 5.5 7 6.3 3 8 3z"/><path d="M5.8 14.5h4.4l-.4 3a2 2 0 0 1-3.6 0z"/><path d="M16 7c1.7 0 2.5 1.8 2.5 4S17.6 16 16 16s-2.5-2.8-2.5-5S14.3 7 16 7z"/><path d="M13.8 18.5h4.4l-.3 1.6a2 2 0 0 1-3.8 0z"/>'),
+  food: s('<path d="M4 3v7a3 3 0 0 0 3 3v8"/><path d="M10 3v7a3 3 0 0 1-3 3"/><path d="M7 3v6"/><path d="M17 21V3c-2.2 1.2-3.5 4-3.5 7.5 0 1.9 1.2 3 3.5 3"/>'),
+  watch: s('<rect x="6" y="6" width="12" height="12" rx="3.5"/><path d="M9 6l.6-3h4.8L15 6M9 18l.6 3h4.8L15 18"/><path d="M12 9.5V12l1.5 1"/>'),
   home: s('<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/><path d="M10 20v-5h4v5"/>'),
   ledger: s('<path d="M4 6h16M4 12h16M4 18h10"/>'),
   accounts: s('<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M16 12h2"/><path d="M3 9h18"/>'),

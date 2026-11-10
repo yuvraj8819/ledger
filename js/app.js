@@ -2,6 +2,7 @@ import * as C from './calc.js';
 import * as S from './store.js';
 import { I } from './icons.js';
 import * as X from './sfx.js';
+import * as H from './health.js';
 
 // ================================================================ state
 let state = S.load();
@@ -11,13 +12,15 @@ const ui = {
   filter: 'all',
   locked: !!state.settings.pinHash,
   hiddenAt: 0,
+  hday: null, // day shown on the Health tab (null = today)
 };
 const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const STANDALONE = !!navigator.standalone || matchMedia('(display-mode: standalone)').matches;
 const hintKey = 'ledger.installHint';
 const showInstallHint = () => { if (STANDALONE) return false; try { return !localStorage.getItem(hintKey) && (IOS || /Android/.test(navigator.userAgent)); } catch { return false; } };
 const FINE = matchMedia('(pointer: fine)').matches; // mouse/trackpad, not a phone
-const TABS = ['home', 'ledger', 'accounts', 'pay', 'settings'];
+const TABS = ['home', 'ledger', 'health', 'accounts', 'pay', 'settings'];
+const bootHash = location.hash;
 if (!TABS.includes(ui.tab)) ui.tab = 'home';
 
 function commit(msg, sound = 'success') {
@@ -107,7 +110,7 @@ function entryRow(e) {
   const cls = e.type === 'received' ? 'in' : e.offBalance ? 'off' : '';
   const amt = e.type === 'received' ? money(e.amount, { sign: true }) : e.type === 'transfer' ? money(e.amount) : money(-e.amount);
   const tags = [e.hidden ? '<span class="tag">hidden</span>' : '', e.offBalance ? '<span class="tag">not mine</span>' : '',
-    e.expectBack ? '<span class="tag warn">owed</span>' : '', e.recurringId ? '<span class="tag">auto</span>' : ''].join('');
+    e.expectBack ? '<span class="tag warn">owed</span>' : '', e.recurringId ? '<span class="tag">auto</span>' : '', e.health ? '<span class="tag">health</span>' : ''].join('');
   return `<button class="row" data-act="open-entry" data-id="${e.id}">
     ${entryIcon(e)}
     <div class="mid"><div class="t">${esc(entryTitle(e))}${tags}</div><div class="s">${entrySub(e)}</div></div>
@@ -143,7 +146,7 @@ function topbar() {
 }
 function tabbar() {
   const t = (id, label) => `<button class="tab ${ui.tab === id ? 'on' : ''}" data-act="tab" data-tab="${id}" aria-label="${label}">${I[id]}<span>${label}</span></button>`;
-  return `<nav class="tabbar"><i class="ind" style="--i:${TABS.indexOf(ui.tab)}"></i>${t('home', 'Home')}${t('ledger', 'Ledger')}${t('accounts', 'Accounts')}${t('pay', 'Pay')}${t('settings', 'Settings')}</nav>
+  return `<nav class="tabbar"><i class="ind" style="--i:${TABS.indexOf(ui.tab)}"></i>${t('home', 'Home')}${t('ledger', 'Ledger')}${t('health', 'Health')}${t('accounts', 'Accounts')}${t('pay', 'Pay')}${t('settings', 'Settings')}</nav>
     <button class="fab" data-act="new-entry" aria-label="New entry">${I.plus}</button>
     <button class="calc-fab" data-act="calc" aria-label="Calculator">=</button>`;
 }
@@ -165,7 +168,7 @@ function render() {
   $('meta[name="theme-color"]')?.setAttribute('content', s.theme === 'light' ? '#f3f2ee' : '#08090a');
   const app = $('#app');
   if (!s.onboarded) { app.innerHTML = welcomeView(); $('#chrome').innerHTML = ''; return; }
-  const views = { home: homeView, ledger: ledgerView, accounts: accountsView, pay: payView, settings: settingsView };
+  const views = { home: homeView, ledger: ledgerView, health: healthView, accounts: accountsView, pay: payView, settings: settingsView };
   const scroll = window.scrollY;
   const same = app.dataset.tab === ui.tab;
   app.innerHTML = topbar() + `<main class="view ${same ? (ui.fresh ? 'refresh' : '') : 'enter'}">${views[ui.tab]()}</main>`;
@@ -251,6 +254,7 @@ function homeView() {
     <button class="stat" data-act="goto-ledger" data-filter="received" style="text-align:left"><div class="eyebrow">Received</div><div class="v pos">${money(month.received)}</div></button>
   </div>
 
+  ${healthHomeRow()}
   ${owed > 0 ? `<button class="row" data-act="tab" data-tab="accounts" style="margin-top:12px"><div class="ic" style="background:rgba(244,183,64,.14);color:var(--warn)">${I.user}</div><div class="mid"><div class="t">People owe you ${money(owed)}</div><div class="s">Tap to settle up</div></div><span class="chev">${I.chev}</span></button>` : ''}
   ${showRewindCta ? `<button class="row rw-cta" data-act="rewind" style="margin-top:12px"><div class="ic" style="background:var(--accent-soft);color:var(--accent)">${I.sparkle}</div><div class="mid"><div class="t">Your ${rw.label.toLowerCase() === 'last week' ? 'week' : rw.label} rewind is ready</div><div class="s">See where the money went</div></div><span class="chev">${I.chev}</span></button>` : ''}
 
@@ -862,6 +866,346 @@ function download(name, blob) {
   toast(`Saved ${name}`);
 }
 
+// ================================================================ health: steps + food
+// Steps come from Apple Health through an iPhone Shortcut (see "Connect Apple Watch"), or are typed in.
+// Food is logged here. Each finished day is settled into the ledger by health.js: +₹500 for the step
+// goal, and one −₹1,000 if you missed it or overate. Never two penalties on one day.
+const healthDay = () => { const t = today(); return ui.hday && ui.hday < t ? ui.hday : t; };
+const dayRec = (d) => (state.health.days[d] ||= { steps: null, meals: [] });
+const kcal = (n) => `${nf0.format(n)} kcal`;
+function openHealthDay(d) { ui.tab = 'health'; ui.hday = d; history.replaceState(null, '', '#health'); render(); window.scrollTo(0, 0); }
+
+/** Runs the rules and saves. Returns the summed ledger change, in paise, of the days that moved. */
+function runHealthRules() {
+  if (!state.health.enabled) return null;
+  H.ensureTags(state);
+  const changes = H.syncHealth(state, today(), S.uid);
+  return changes.length ? { changes, net: changes.reduce((s, c) => s + c.delta, 0) } : null;
+}
+function healthCommit(msg) {
+  const r = runHealthRules();
+  if (r) msg += ` · ledger ${rs(r.net, { sign: true })}`;
+  commit(msg, r ? (r.net >= 0 ? 'income' : 'delete') : 'success');
+}
+/** Settles days that just finished (on open, on return to the app, and at midnight). */
+function settleHealth({ quietRender = false } = {}) {
+  const r = runHealthRules();
+  if (!state.health.enabled) return;
+  S.save(state);
+  if (!r) return;
+  S.autoSnapshot(state);
+  if (!quietRender && !sheetStack.length) { ui.fresh = true; render(); }
+  const msg = r.changes.length === 1 ? `${fmtDay(r.changes[0].day)} settled: ${rs(r.net, { sign: true })}` : `${r.changes.length} days settled: ${rs(r.net, { sign: true })}`;
+  setTimeout(() => { toast(msg); X.play(r.net >= 0 ? 'income' : 'delete'); }, quietRender ? 800 : 0);
+}
+function scheduleMidnight() {
+  const n = new Date(), next = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1, 0, 0, 5);
+  setTimeout(() => { settleHealth(); if (!sheetStack.length) render(); scheduleMidnight(); }, next - n);
+}
+
+function applySteps(map, from) {
+  const t = today(); let n = 0, last = null;
+  for (const [d, steps] of Object.entries(map)) {
+    if (d > t) continue;
+    Object.assign(dayRec(d), { steps, stepsAt: Date.now(), stepsFrom: from }); n++; last = d;
+  }
+  if (!n) return warn('Those steps are for a day that hasn’t happened yet');
+  healthCommit(n === 1 ? `${fmtDay(last)}: ${nf0.format(map[last])} steps saved` : `Steps saved for ${n} days`);
+}
+/** A link like …/ledger/#steps=2026-11-10=12034 (from a Shortcut, on Android or in Safari). */
+function importStepsFromLink() {
+  const m = bootHash.match(/^#steps=(.+)$/);
+  if (!m) return;
+  ui.tab = 'health'; history.replaceState(null, '', '#health');
+  const got = H.parseSteps(decodeURIComponent(m[1]));
+  if (!Object.keys(got).length) return;
+  if (!state.health.enabled) { setTimeout(() => toast('Set up Health first, then sync your steps again'), 700); return; }
+  const t = today();
+  for (const [d, steps] of Object.entries(got)) if (d <= t) Object.assign(dayRec(d), { steps, stepsAt: Date.now(), stepsFrom: 'health' });
+  S.save(state);
+  setTimeout(() => toast(`Steps synced from Apple Health`), 700);
+}
+async function pasteSteps(d) {
+  let text = null;
+  try { text = await navigator.clipboard.readText(); } catch { text = null; }
+  const got = text ? H.parseSteps(text) : {};
+  if (Object.keys(got).length) return applySteps(got, 'health');
+  const bare = text && H.parseSteps(text, d)[d];
+  stepsSheet(d, bare != null ? { value: bare, note: `The clipboard has ${nf0.format(bare)} but no date. Is that ${fmtDay(d)}'s count?` }
+    : { note: text == null ? 'Couldn’t read the clipboard here. Paste what the shortcut copied into the box below.' : 'No step count on the clipboard. Run your “Ledger steps” shortcut first, or type the number.' });
+}
+
+function rulesList(h) {
+  return `<ul class="rule-list">
+    <li><span class="e">👟</span><div>Walk <b>${nf0.format(h.stepGoal)} steps</b> → <b class="plus">+${rs(h.reward)}</b></div></li>
+    <li><span class="e">🛋️</span><div>Fall short → <b class="minus">−${rs(h.penalty)}</b></div></li>
+    <li><span class="e">🍕</span><div>A cheat meal, or eating <b>${nf0.format(h.overMargin)}+ kcal</b> over your ${kcal(h.calorieGoal)} goal → <b class="minus">−${rs(h.penalty)}</b></div></li>
+    <li><span class="e">🛡️</span><div>Miss steps <i>and</i> overeat? Still just one <b class="minus">−${rs(h.penalty)}</b>.</div></li>
+  </ul>`;
+}
+
+function healthHomeRow() {
+  const h = state.health;
+  if (!h.enabled) return `<button class="row" data-act="tab" data-tab="health" style="margin-top:12px"><div class="ic" style="background:var(--pos-soft);color:var(--pos)">${I.steps}</div><div class="mid"><div class="t">Earn ${rs(h.reward)} a day for walking</div><div class="s">Link steps and food to your balance</div></div><span class="chev">${I.chev}</span></button>`;
+  const t = today(), d = h.days[t] || {};
+  const v = H.verdict(d, H.rulesOf(h));
+  const waiting = H.waitingDays(h);
+  const sub = waiting.length ? `${fmtDay(waiting[0])} is waiting for its steps` : `If today ended now: ${v.net ? rs(v.net, { sign: true }) : 'nothing in or out'}`;
+  return `<button class="row" data-act="tab" data-tab="health" style="margin-top:12px"><div class="ic" style="background:var(--pos-soft);color:var(--pos)">${I.steps}</div><div class="mid"><div class="t">${v.stepsKnown ? nf0.format(v.steps) : '—'} steps · ${kcal(v.kcal)} today</div><div class="s">${esc(sub)}</div></div>${waiting.length ? '<span class="tag warn">sync</span>' : ''}<span class="chev">${I.chev}</span></button>`;
+}
+
+function healthIntro() {
+  const h = state.health;
+  return `<div class="section-head" style="margin-top:4px"><h2>Health</h2></div>
+  <section class="card hero">
+    <div class="eyebrow">Steps and food that move your money</div>
+    <p class="muted" style="margin:8px 0 0;font-size:14.5px">Your Apple Watch steps and the food you log here settle into your ledger at the end of every day.</p>
+    ${rulesList(h)}
+    <button class="btn accent" data-act="h-rules" data-first="1" style="margin-top:14px">Set it up</button>
+  </section>
+  <p class="foot-note">Steps arrive from Apple Health through a Shortcut on your iPhone. Setup shows you how.</p>`;
+}
+
+function verdictCard(d, day, rules) {
+  const h = state.health, t = today();
+  const v = H.verdict(day, rules);
+  const amts = (x) => `<div class="amts">${x.reward ? `<span class="plus num">+${rs(x.reward)}</span>` : ''}${x.penalty ? `<span class="minus num">−${rs(x.penalty)}</span>` : ''}${!x.reward && !x.penalty ? '<span class="num">₹0</span>' : ''}</div>`;
+  const why = v.reasons.length ? `Lost for ${v.reasons.join(' + ')}.` : '';
+  let t1, s1, show = true;
+  if (d < h.startDate) { t1 = 'Before your rules started'; s1 = `Rules count from ${fmtDay(h.startDate)}.`; show = false; }
+  else if (d === t) {
+    t1 = 'If today ended now';
+    s1 = v.stepsKnown ? `${why} Settles into your ledger after midnight.` : 'Steps not synced yet today. Settles after midnight once they are.';
+    if (!v.stepsKnown) show = false;
+  } else if (!H.stepsFinal(d, day, rules.stepGoal)) {
+    t1 = 'Waiting for the final step count'; show = false;
+    s1 = day.steps != null ? `Only ${nf0.format(day.steps)} steps were synced, at ${new Date(day.stepsAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}. Sync again or type the day's total to settle it.` : 'Sync from Apple Health or type the steps to settle this day.';
+  } else { t1 = 'Settled in your ledger'; s1 = `${why} Change anything here and the ledger updates to match.`; }
+  return `<section class="card verdict"><div class="eyebrow">Money</div><div class="t" style="margin-top:6px">${t1}</div>${show ? amts(v) : ''}<div class="s">${esc(s1.trim())}</div></section>`;
+}
+
+function healthView() {
+  const h = state.health;
+  if (!h.enabled) return healthIntro();
+  const t = today(), d = healthDay();
+  const day = h.days[d] || { steps: null, meals: [] };
+  const rules = day.rules || H.rulesOf(h);
+  const v = H.verdict(day, rules);
+  const limit = rules.calorieGoal + rules.overMargin;
+  const stepPct = v.stepsKnown ? Math.min(1, v.steps / rules.stepGoal) : 0;
+  const kcalPct = limit ? Math.min(1, v.kcal / limit) : 0;
+  const meals = (day.meals || []).slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  const month = H.healthSummary(state, `${C.monthKey(t)}-01`, t);
+  const waiting = H.waitingDays(h);
+  const hist = [];
+  for (let x = C.addDays(t, -1); x >= h.startDate && hist.length < 14; x = C.addDays(x, -1)) hist.push(x);
+  const histRow = (x) => {
+    const r = h.days[x] || {}; const rr = r.rules || H.rulesOf(h); const vv = H.verdict(r, rr);
+    const done = H.stepsFinal(x, r, rr.stepGoal);
+    return `<button class="row" data-act="h-day" data-d="${x}"><div class="ic ${done ? (vv.net >= 0 ? 'in' : 'out') : ''}">${done ? (vv.penalty ? '✕' : '✓') : '…'}</div>
+      <div class="mid"><div class="t">${esc(fmtDay(x))}</div><div class="s">${vv.stepsKnown ? nf0.format(vv.steps) : '—'} steps · ${kcal(vv.kcal)}${vv.cheat ? ' · cheat meal' : ''}</div></div>
+      <div class="amt ${done && vv.net > 0 ? 'in' : ''}">${done ? money(vv.net, { sign: true }) : '<span class="tag warn">sync</span>'}</div></button>`;
+  };
+  return `
+  <div class="h-nav">
+    <button class="icon-btn" data-act="h-shift" data-n="-1" aria-label="Previous day" ${d <= h.startDate && !h.days[C.addDays(d, -1)] ? 'disabled' : ''}>${I.back}</button>
+    <div class="when"><b>${esc(fmtDay(d))}</b><span>${d === t ? 'so far' : C.parseDate(d).toLocaleDateString('en-IN', { weekday: 'long' })}</span></div>
+    <button class="icon-btn fwd" data-act="h-shift" data-n="1" aria-label="Next day" ${d >= t ? 'disabled' : ''}>${I.back}</button>
+  </div>
+
+  ${waiting.length && d === t ? `<button class="row" data-act="h-day" data-d="${waiting[0]}"><div class="ic" style="background:rgba(244,183,64,.14);color:var(--warn)">${I.watch}</div><div class="mid"><div class="t">${waiting.length === 1 ? `${esc(fmtDay(waiting[0]))} needs its steps` : `${waiting.length} days need their steps`}</div><div class="s">They settle once the day's count is in</div></div><span class="chev">${I.chev}</span></button>` : ''}
+
+  <section class="card h-card">
+    <div class="head"><div class="eyebrow">${I.steps} Steps</div><span class="faint" style="font-size:12px">${day.stepsFrom === 'health' ? 'from Apple Health' : day.stepsFrom === 'typed' ? 'typed in' : ''}</span></div>
+    <div class="h-big num">${v.stepsKnown ? nf0.format(v.steps) : '—'}<small>/ ${nf0.format(rules.stepGoal)}</small></div>
+    <div class="meter ${v.stepsMet ? 'good' : stepPct < .5 && d !== t ? 'over' : ''}" style="margin-top:12px"><i style="width:${(stepPct * 100).toFixed(1)}%"></i></div>
+    <div class="foot">${v.stepsMet ? `Goal hit · <b class="pos">+${rs(rules.reward)}</b>` : v.stepsKnown ? `${nf0.format(rules.stepGoal - v.steps)} to go` : 'Not synced yet'}</div>
+    <div class="h-btns"><button class="btn accent" data-act="h-paste" data-d="${d}">${I.watch} Paste from Health</button><button class="btn ghost" data-act="h-steps" data-d="${d}">Type steps</button></div>
+  </section>
+
+  <section class="card h-card">
+    <div class="head"><div class="eyebrow">${I.food} Food</div><span class="faint" style="font-size:12px">goal ${kcal(rules.calorieGoal)}</span></div>
+    <div class="h-big num">${nf0.format(v.kcal)}<small>kcal</small></div>
+    <div class="meter ${v.overate ? 'over' : kcalPct > .85 ? 'low' : ''}" style="margin-top:12px"><i style="width:${(kcalPct * 100).toFixed(1)}%"></i></div>
+    <div class="foot">${v.cheat ? `Cheat meal logged · <b class="neg">−${rs(rules.penalty)}</b>` : v.overByCalories ? `${kcal(v.over)} over your goal · <b class="neg">−${rs(rules.penalty)}</b>` : `${kcal(Math.max(0, limit - v.kcal))} left before the ${kcal(limit)} limit`}</div>
+    ${meals.length ? `<div class="list" style="margin-top:12px">${meals.map((m) => `<button class="row" data-act="h-meal" data-d="${d}" data-id="${m.id}"><div class="ic ${m.cheat ? 'out' : ''}">${m.cheat ? '🍕' : '🍽️'}</div><div class="mid"><div class="t">${esc(m.name)}${m.cheat ? '<span class="tag warn">cheat</span>' : ''}</div><div class="s">${esc(fmtTime(m.time))}</div></div><div class="amt">${kcal(m.kcal)}</div></button>`).join('')}</div>` : ''}
+    <div class="h-btns"><button class="btn ${meals.length ? 'ghost' : 'accent'}" data-act="h-food" data-d="${d}">${I.plus} Add food</button></div>
+  </section>
+
+  ${verdictCard(d, day, rules)}
+
+  <div class="eyebrow" style="margin:18px 4px 0">This month</div>
+  <div class="stats" style="margin-top:8px">
+    <div class="stat"><div class="eyebrow">Earned</div><div class="v pos">${money(month.earned)}</div></div>
+    <div class="stat"><div class="eyebrow">Lost</div><div class="v neg">${money(month.lost)}</div></div>
+    <div class="stat"><div class="eyebrow">Good days</div><div class="v">${month.good}/${month.good + month.bad}</div></div>
+  </div>
+
+  ${hist.length ? `<div class="section-head"><h2>Past days</h2></div><div class="list">${hist.map(histRow).join('')}</div>` : ''}
+
+  <div class="section-head"><h2>Setup</h2></div>
+  <section class="card tap" data-act="h-connect"><div class="set-row"><div class="ic">${I.watch}</div><div><div class="t">Connect Apple Watch</div><div class="s">Send your steps from Apple Health with a Shortcut</div></div><span class="go">${I.arrow}</span></div></section>
+  <section class="card tap" data-act="h-rules"><div class="set-row"><div class="ic">${I.rupee}</div><div><div class="t">Goals & money</div><div class="s">${nf0.format(h.stepGoal)} steps · ${kcal(h.calorieGoal)} · +${rs(h.reward)} / −${rs(h.penalty)}</div></div><span class="go">${I.arrow}</span></div></section>`;
+}
+
+function rulesSheet(first = false) {
+  const h = state.health;
+  const r = { ...h, accountId: h.accountId || state.accounts[0]?.id };
+  const num = (id, label, val, hint, suffix = '') => `<div class="field"><label class="eyebrow" for="${id}">${label}</label><div class="amount-box">${suffix === '₹' ? '<span class="cur">₹</span>' : ''}<input id="${id}" class="num" inputmode="numeric" value="${val}" style="font-size:24px">${suffix && suffix !== '₹' ? `<span class="faint" style="font-size:15px;padding-right:6px">${suffix}</span>` : ''}</div>${hint ? `<p class="faint" style="font-size:12.5px;margin:6px 2px 0">${hint}</p>` : ''}</div>`;
+  const body = () => `
+    ${first ? `<p class="lead" style="margin-top:0">Pick your daily calorie goal. The rest is already set the way you described, and you can change any of it.</p>` : ''}
+    ${num('r-kcal', 'Daily calorie goal', r.calorieGoal, '', 'kcal')}
+    ${num('r-margin', 'Overeating starts at', r.overMargin, 'Calories over your goal that cost the penalty. A cheat meal always does.', 'kcal over')}
+    ${num('r-steps', 'Daily step goal', r.stepGoal, '', 'steps')}
+    <div class="opts" style="margin-top:0">
+      <div>${num('r-reward', 'Reward', r.reward / 100, '', '₹')}</div>
+      <div>${num('r-penalty', 'Penalty', r.penalty / 100, '', '₹')}</div>
+    </div>
+    <div class="field"><div class="eyebrow label">Money moves in</div><div class="opts">${[['upi', 'Bank · UPI'], ['cash', 'Cash']].map(([v, l]) => `<button class="opt ${r.method === v ? 'on' : ''}" data-rm="${v}">${l}</button>`).join('')}</div></div>
+    <div class="field"><div class="eyebrow label">Account</div><div class="opts">${state.accounts.map((a) => `<button class="opt ${r.accountId === a.id ? 'on' : ''}" data-ra="${a.id}">${esc(a.name)}</button>`).join('')}</div></div>
+    <p class="faint" style="font-size:12.5px;margin:14px 2px 0">${first ? 'Rules start today. Each day settles into your ledger after midnight.' : 'Changes count from today. Days already settled keep the rules they had.'}</p>
+    <div class="btn-row">${!first ? `<button class="btn ghost" data-off style="flex:0 0 auto;width:auto;padding:16px 18px">Turn off</button>` : ''}<button class="btn accent" data-save-rules>${first ? 'Start' : 'Save'}</button></div>`;
+  const sh = openSheet(first ? 'Set up Health' : 'Goals & money', body());
+  const el = $('.sheet-body', sh);
+  const int = (id) => Math.round(Number(($(id, sh).value || '').replace(/[,₹\s]/g, '')));
+  const pull = () => { r.calorieGoal = int('#r-kcal'); r.overMargin = int('#r-margin'); r.stepGoal = int('#r-steps'); r.reward = C.toPaise(int('#r-reward')); r.penalty = C.toPaise(int('#r-penalty')); };
+  sh.addEventListener('click', async (ev) => {
+    const m = ev.target.closest('[data-rm]'), a = ev.target.closest('[data-ra]');
+    if (m || a) { pull(); if (m) r.method = m.dataset.rm; if (a) r.accountId = a.dataset.ra; el.innerHTML = body(); return; }
+    if (ev.target.closest('[data-off]')) {
+      if (await ask('Turn off Health?', 'Days stop settling. Money already added or taken stays in your ledger, and your step and food log is kept.', 'Turn off', true)) { h.enabled = false; closeAllSheets(); commit('Health rules off'); }
+      return;
+    }
+    if (!ev.target.closest('[data-save-rules]')) return;
+    pull();
+    if (!(r.calorieGoal >= 800 && r.calorieGoal <= 6000)) return warn('Calorie goal should be between 800 and 6,000');
+    if (!(r.stepGoal >= 1000) || !(r.overMargin >= 0) || !(r.reward >= 0) || !(r.penalty >= 0)) return warn('Check the numbers');
+    Object.assign(h, { calorieGoal: r.calorieGoal, overMargin: r.overMargin, stepGoal: r.stepGoal, reward: r.reward, penalty: r.penalty, method: r.method, accountId: r.accountId });
+    if (!h.enabled) { h.enabled = true; h.startDate = h.startDate && !first ? h.startDate : today(); }
+    // today isn't settled yet, so it picks up the new rules too
+    if (h.days[today()]) delete h.days[today()].rules;
+    closeSheet();
+    ui.tab = 'health'; history.replaceState(null, '', '#health');
+    healthCommit(first ? 'Health is on. Today counts.' : 'Saved');
+    if (first) setTimeout(() => connectSheet(), 700);
+  });
+}
+
+function stepsSheet(d, { note = '', value } = {}) {
+  const r = state.health.days[d];
+  const sh = openSheet(`Steps · ${fmtDay(d)}`, `
+    ${note ? `<p class="lead" style="margin-top:0">${esc(note)}</p>` : ''}
+    <div class="field" style="margin-top:0"><label class="eyebrow" for="st-n">Steps on ${esc(fmtDay(d))}</label><input class="input num" id="st-n" inputmode="numeric" placeholder="${nf0.format(state.health.stepGoal)}" value="${value ?? r?.steps ?? ''}" style="font-size:22px"></div>
+    <div class="field"><label class="eyebrow" for="st-paste">Or paste what the shortcut copied <span class="faint">— optional</span></label><textarea class="input" id="st-paste" placeholder="2026-11-10=12034"></textarea></div>
+    <p class="faint" style="font-size:12.5px;margin:10px 2px 0">The day's total is in the Fitness app on your iPhone (Activity → Steps), or Health → Steps.</p>
+    <div class="btn-row"><button class="btn ghost" data-act="close-sheet">Cancel</button><button class="btn accent" data-st-save>Save steps</button></div>`);
+  if (FINE) setTimeout(() => $('#st-n', sh)?.focus(), 300);
+  sh.addEventListener('click', (ev) => {
+    if (!ev.target.closest('[data-st-save]')) return;
+    const pasted = $('#st-paste', sh).value.trim();
+    if (pasted) {
+      const got = H.parseSteps(pasted, d);
+      if (!Object.keys(got).length) return warn('Couldn’t find a step count in that text');
+      closeSheet(); return applySteps(got, 'health');
+    }
+    const n = Math.round(Number(($('#st-n', sh).value || '').replace(/[,\s]/g, '')));
+    if (!Number.isFinite(n) || n < 0 || n > 200000 || $('#st-n', sh).value.trim() === '') return warn('Enter the number of steps');
+    closeSheet(); applySteps({ [d]: n }, 'typed');
+  });
+}
+
+function foodSheet(d, meal) {
+  const h = state.health;
+  const m = meal ? { ...meal } : { name: '', kcal: '', cheat: false, time: d === today() ? nowTime() : '13:00' };
+  const freq = meal ? [] : H.frequentFoods(h);
+  const rules = h.days[d]?.rules || H.rulesOf(h);
+  const before = H.caloriesOf(h.days[d]) - (meal ? Number(meal.kcal) || 0 : 0);
+  const sh = openSheet(meal ? 'Edit food' : `Add food · ${fmtDay(d)}`, `
+    ${freq.length ? `<div class="eyebrow label" style="margin-top:0">Again?</div><div class="opts" style="flex-wrap:wrap">${freq.map((f, i) => `<button class="opt" data-ff="${i}">${esc(f.name)} · ${nf0.format(f.kcal)}</button>`).join('')}</div>` : ''}
+    <div class="field" ${freq.length ? '' : 'style="margin-top:0"'}><label class="eyebrow" for="fd-name">What did you eat?</label><input class="input" id="fd-name" value="${esc(m.name)}" placeholder="Dal rice, 2 rotis, chai…" autocomplete="off"></div>
+    <div class="field"><label class="eyebrow" for="fd-kcal">Calories</label><div class="amount-box"><input id="fd-kcal" class="num" inputmode="numeric" placeholder="0" value="${m.kcal}" style="font-size:26px"><span class="faint" style="font-size:15px;padding-right:6px">kcal</span></div>
+      <p class="faint" id="fd-left" style="font-size:12.5px;margin:6px 2px 0"></p></div>
+    <div class="field"><label class="eyebrow" for="fd-time">Time</label><input class="input num" type="time" id="fd-time" value="${m.time || ''}"></div>
+    <div class="check ${m.cheat ? 'on' : ''}" data-cheat style="margin-top:18px"><span class="box">${m.cheat ? I.check : ''}</span><div><div class="t">Cheat meal</div><div class="s">Counts as overeating for the day, whatever the calories: −${rs(rules.penalty)} (only once a day).</div></div></div>
+    <div class="btn-row">${meal ? `<button class="btn danger" data-fd-del style="flex:0 0 auto;width:auto;padding:16px 20px" aria-label="Delete">${I.trash}</button>` : ''}<button class="btn accent" data-fd-save>${meal ? 'Save' : 'Add food'}</button></div>`);
+  const left = () => {
+    const k = Math.round(Number(($('#fd-kcal', sh).value || '0').replace(/,/g, ''))) || 0;
+    const total = before + k, lim = rules.calorieGoal + rules.overMargin;
+    $('#fd-left', sh).textContent = total >= lim ? `That makes ${nf0.format(total)} kcal today, over the ${nf0.format(lim)} limit (−${rs(rules.penalty)}).` : `That makes ${nf0.format(total)} kcal today. ${nf0.format(lim - total)} left before the ${nf0.format(lim)} limit.`;
+  };
+  left();
+  $('#fd-kcal', sh).addEventListener('input', left);
+  if (FINE && !meal) setTimeout(() => $('#fd-name', sh)?.focus(), 300);
+  sh.addEventListener('click', async (ev) => {
+    const ff = ev.target.closest('[data-ff]');
+    if (ff) { const f = freq[Number(ff.dataset.ff)]; $('#fd-name', sh).value = f.name; $('#fd-kcal', sh).value = f.kcal; left(); return; }
+    const ch = ev.target.closest('[data-cheat]');
+    if (ch) { m.cheat = !m.cheat; ch.classList.toggle('on', m.cheat); $('.box', ch).innerHTML = m.cheat ? I.check : ''; return; }
+    if (ev.target.closest('[data-fd-del]')) {
+      const rec = dayRec(d); rec.meals = rec.meals.filter((x) => x.id !== meal.id);
+      closeSheet(); X.play('delete'); return healthCommit(`${meal.name} removed`);
+    }
+    if (!ev.target.closest('[data-fd-save]')) return;
+    m.name = $('#fd-name', sh).value.trim() || (m.cheat ? 'Cheat meal' : '');
+    const raw = ($('#fd-kcal', sh).value || '').replace(/[,\s]/g, '');
+    m.kcal = Math.round(Number(raw));
+    m.time = $('#fd-time', sh).value || '';
+    if (!m.name) return warn('Say what you ate');
+    if (raw === '' && !m.cheat) return warn('Add the calories (a guess is fine)');
+    if (!Number.isFinite(m.kcal) || m.kcal < 0 || m.kcal > 10000) m.kcal = 0;
+    const rec = dayRec(d);
+    if (meal) Object.assign(rec.meals.find((x) => x.id === meal.id), m);
+    else rec.meals.push({ ...m, id: S.uid() });
+    closeSheet();
+    healthCommit(meal ? 'Saved' : `${m.name} · ${kcal(m.kcal)} added`);
+  });
+}
+
+function connectSheet() {
+  const site = location.origin + location.pathname;
+  openSheet('Connect Apple Watch', `
+    <p class="lead" style="margin-top:0">Websites can't read Apple Health directly, so a Shortcut on your iPhone does it. Your Watch syncs steps to the iPhone's Health app. The Shortcut reads them and copies them, and Ledger pastes them in.</p>
+    <div class="eyebrow label">1 · Make the shortcut (once)</div>
+    <ol class="steps-guide">
+      <li>Open <b>Shortcuts</b> → <b>+</b>. Name it <b>Ledger steps</b>.</li>
+      <li>Add <b>Find Health Samples</b>: Type <b>Steps</b>, Start Date <b>is today</b>. Tap it and set <b>Group By: Day</b>.</li>
+      <li>Add <b>Calculate Statistics</b>: <b>Sum</b> of the Health Samples.</li>
+      <li>Add <b>Format Date</b>: Current Date, Custom format <code>yyyy-MM-dd</code>.</li>
+      <li>Add <b>Text</b>: the Formatted Date, then <code>=</code>, then the Statistics result. It reads like <code>2026-11-10=12034</code>.</li>
+      <li>Add <b>Copy to Clipboard</b> (the Text), then <b>Show Notification</b> “Steps ready for Ledger”.</li>
+      <li>Run it once and tap <b>Allow</b> when it asks for Health access.</li>
+    </ol>
+    <div class="eyebrow label" style="margin-top:20px">2 · Run it at 11:59 PM every day</div>
+    <ol class="steps-guide">
+      <li>Shortcuts → <b>Automation</b> → <b>+</b> → <b>Time of Day</b> → <b>11:59 PM</b>, <b>Daily</b>.</li>
+      <li>Choose <b>Run Immediately</b>, then pick <b>Ledger steps</b>.</li>
+    </ol>
+    <div class="eyebrow label" style="margin-top:20px">3 · Paste it in</div>
+    <ol class="steps-guide">
+      <li>Open Ledger → <b>Health</b> → <b>Paste from Health</b>, and tap <b>Paste</b> when iPhone asks. That day settles straight away.</li>
+      <li>Missed it? Run the shortcut by hand the next morning, but change its Start Date to <b>yesterday</b> and its date to yesterday too. Or just type the steps.</li>
+    </ol>
+    <p class="faint" style="font-size:12.5px;margin:16px 2px 0">iPhone hides Health data while the phone is locked, so the 11:59 PM run can fail if your phone is locked. If it does, Ledger simply waits. It never fines a day without a final count. A count taken before 11:30 PM only counts if it already hits your goal.</p>
+    <p class="faint" style="font-size:12.5px;margin:10px 2px 0">On Android or a computer, a link works too: <span class="code-line">${esc(site)}#steps=2026-11-10=12034</span></p>
+    <div class="btn-row"><button class="btn accent" data-act="close-sheet">Done</button></div>`);
+}
+
+document.addEventListener('click', (ev) => {
+  const el = ev.target.closest('[data-act^="h-"]');
+  if (!el) return;
+  const d = el.dataset.d;
+  switch (el.dataset.act) {
+    case 'h-rules': rulesSheet(el.dataset.first === '1'); break;
+    case 'h-connect': connectSheet(); break;
+    case 'h-shift': { const n = C.addDays(healthDay(), Number(el.dataset.n)); ui.hday = n >= today() ? null : n; ui.fresh = false; render(); break; }
+    case 'h-day': openHealthDay(d); break;
+    case 'h-paste': pasteSteps(d); break;
+    case 'h-steps': stepsSheet(d); break;
+    case 'h-food': foodSheet(d); break;
+    case 'h-meal': { const m = state.health.days[d]?.meals.find((x) => x.id === el.dataset.id); if (m) foodSheet(d, m); break; }
+  }
+});
+
 // ================================================================ PIN
 function pinPad(id) {
   return `<div class="pin-dots" id="${id}-dots">${'<i></i>'.repeat(4)}</div>
@@ -919,12 +1263,12 @@ document.addEventListener('click', async (ev) => {
   const act = el.dataset.act;
   const inSheet = !!el.closest('.sheet');
   switch (act) {
-    case 'tab': closeAllSheets(); ui.tab = el.dataset.tab; history.replaceState(null, '', '#' + ui.tab); render(); window.scrollTo({ top: 0 }); break;
+    case 'tab': closeAllSheets(); if (el.dataset.tab === 'health') ui.hday = null; ui.tab = el.dataset.tab; history.replaceState(null, '', '#' + ui.tab); render(); window.scrollTo({ top: 0 }); break;
     case 'goto-ledger': ui.tab = 'ledger'; ui.period = 'month'; ui.filter = el.dataset.filter; history.replaceState(null, '', '#ledger'); render(); window.scrollTo({ top: 0 }); break;
     case 'period': ui.period = el.dataset.v; render(); break;
     case 'filter': ui.filter = el.dataset.v; render(); break;
-    case 'new-entry': entrySheet(null); break;
-    case 'open-entry': { const e = byId(state.entries, el.dataset.id); if (e) { if (inSheet) closeAllSheets(); entrySheet(e); } break; }
+    case 'new-entry': if (ui.tab === 'health' && state.health.enabled) foodSheet(healthDay()); else entrySheet(null); break;
+    case 'open-entry': { const e = byId(state.entries, el.dataset.id); if (e?.health) { closeAllSheets(); openHealthDay(e.health.day); } else if (e) { if (inSheet) closeAllSheets(); entrySheet(e); } break; }
     case 'calc': openCalc(); break;
     case 'search': openSearch(); break;
     case 'lock-now':
@@ -1009,6 +1353,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) { ui.hiddenAt = Date.now(); return; }
   if (state.settings.pinHash && ui.hiddenAt && Date.now() - ui.hiddenAt >= (state.settings.lockAfter ?? 60) * 1000) { ui.locked = true; renderLock(); }
   checkPendingPay();
+  settleHealth();
 });
 
 // ================================================================ recurring bills
@@ -1068,8 +1413,11 @@ if (window.visualViewport) {
 // ================================================================ boot
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 postRecurring();
+importStepsFromLink();
+settleHealth({ quietRender: true });
 render();
 checkPendingPay();
+scheduleMidnight();
 // ================================================================ updates
 // A home-screen app on iPhone usually resumes from memory instead of reloading, so it would
 // never notice a new version. Check whenever it comes to the front, and reload into the new

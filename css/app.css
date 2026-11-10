@@ -293,7 +293,7 @@ input, select, textarea { outline: none; }
 /* ---------- tab bar & floating ---------- */
 .tabbar {
   position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 12px);
-  width: min(448px, calc(100% - 24px)); height: var(--tabbar-h); display: grid; grid-template-columns: repeat(5, 1fr);
+  width: min(448px, calc(100% - 24px)); height: var(--tabbar-h); display: grid; grid-template-columns: repeat(6, 1fr);
   padding: 7px; gap: 4px; border-radius: 28px; z-index: 20;
   background: var(--glass); backdrop-filter: blur(22px) saturate(1.6); -webkit-backdrop-filter: blur(22px) saturate(1.6);
   border: 1px solid var(--line-2); box-shadow: var(--shadow);
@@ -494,7 +494,7 @@ select.input option { background: var(--bg-2); color: var(--ink); }
 }
 .tabbar .ind { /* the pill that slides to the active tab */
   position: absolute; top: 7px; bottom: 7px; border-radius: 21px;
-  width: calc((100% - 30px) / 5); left: calc(7px + var(--i, 0) * ((100% - 30px) / 5 + 4px));
+  width: calc((100% - 34px) / 6); left: calc(7px + var(--i, 0) * ((100% - 34px) / 6 + 4px));
   background: var(--g-bg-2); box-shadow: var(--g-hi); border: 1px solid var(--g-brd);
   transition: left .5s var(--spring);
 }
@@ -651,3 +651,39 @@ html, body { overflow-x: hidden; }
 .install .ic-lock svg { width: 20px; height: 20px; }
 .top-actions { gap: 6px; }
 .top-actions .icon-btn { width: 40px; height: 40px; }
+
+/* ---------- v1.3 health: steps, food and the rules that move money ---------- */
+.tab { font-size: 8.6px; letter-spacing: .06em; }
+.h-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 4px 0 12px; }
+.h-nav .when { text-align: center; flex: 1; }
+.h-nav .when b { display: block; font: 700 17px/1.2 var(--display); }
+.h-nav .when span { font-size: 12.5px; color: var(--ink-3); }
+.h-nav .icon-btn[disabled] { opacity: .3; pointer-events: none; }
+.h-nav .fwd svg { transform: scaleX(-1); }
+.h-big { font: 750 34px/1.1 var(--display); margin-top: 8px; font-variant-numeric: tabular-nums; }
+.h-big small { font: 600 15px var(--sans, inherit); color: var(--ink-3); margin-left: 6px; }
+.h-card { margin-top: 12px; }
+.h-card .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.h-card .head .eyebrow { display: flex; align-items: center; gap: 8px; }
+.h-card .head .eyebrow svg { width: 16px; height: 16px; }
+.h-card .foot { font-size: 13px; color: var(--ink-3); margin-top: 10px; }
+.h-btns { display: flex; gap: 8px; margin-top: 14px; }
+.h-btns .btn { flex: 1; padding: 12px 10px; font-size: 14px; }
+.meter.good i { background: var(--pos, #16a06b); }
+.verdict { margin-top: 12px; }
+.verdict .t { font-weight: 700; font-size: 15.5px; }
+.verdict .s { font-size: 13px; color: var(--ink-3); margin-top: 4px; }
+.verdict .amts { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.verdict .amts span { padding: 6px 10px; border-radius: 10px; font-weight: 700; font-size: 14px; }
+.verdict .amts .plus { background: var(--pos-soft); color: var(--pos); }
+.verdict .amts .minus { background: rgba(229, 72, 77, .14); color: var(--accent); }
+.rule-list { margin: 14px 0 4px; padding: 0; list-style: none; display: grid; gap: 10px; }
+.rule-list li { display: flex; gap: 12px; align-items: flex-start; font-size: 14.5px; }
+.rule-list li b.plus { color: var(--pos, #16a06b); }
+.rule-list li b.minus { color: var(--accent); white-space: nowrap; }
+.rule-list li b.plus { white-space: nowrap; }
+.rule-list .e { width: 28px; flex: 0 0 28px; text-align: center; font-size: 18px; }
+.steps-guide { padding-left: 20px; margin: 8px 0 0; display: grid; gap: 10px; font-size: 14.5px; line-height: 1.5; }
+.steps-guide code, .code-line { font: 12.5px/1.5 ui-monospace, Menlo, monospace; background: var(--surface-3); padding: 2px 6px; border-radius: 6px; word-break: break-all; }
+.code-line { display: block; padding: 10px 12px; margin-top: 8px; }
+textarea.input { min-height: 88px; resize: vertical; font: 14px/1.4 ui-monospace, Menlo, monospace; }
