@@ -623,3 +623,23 @@ body::before { filter: none; inset: -30%; }
 /* floating buttons step aside while a sheet is open */
 #chrome > * { transition: opacity .25s ease; }
 .sheet-open #chrome > * { opacity: 0; pointer-events: none; }
+
+/* =====================================================================
+   v1.2.2 — calm tab switches, vertical-only sheets
+   ===================================================================== */
+/* Switching tabs: nothing slides or lifts any more, the new page just fades in. */
+.view.enter > *, .welcome > * { animation: fadeIn .22s ease both; animation-delay: 0ms !important; }
+@keyframes fadeIn { from { opacity: 0; } }
+.view.enter .meter > i, .view.enter .bar-row .track i, .view.enter .acct .share i, .view.enter .spark .b i { animation: none; }
+.tab svg, .tab.on svg { transform: none; transition: none; }
+.tabbar .ind { transition: left .3s var(--out); }
+
+/* Sheets scroll up and down only: no sideways drag, no sideways rubber-band. */
+.sheet { overflow-x: hidden; overscroll-behavior: contain; touch-action: pan-y; }
+.sheet-body, .sheet .field, .sheet .opts, .sheet .cats { max-width: 100%; min-width: 0; }
+.opts > *, .cats > *, .input { min-width: 0; }
+.sheet input[type="date"], .sheet input[type="time"] {
+  -webkit-appearance: none; appearance: none; width: 100%; min-width: 0; display: block; text-align: left;
+}
+.backdrop { touch-action: none; }
+html, body { overflow-x: hidden; }
