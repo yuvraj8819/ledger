@@ -360,7 +360,7 @@ function settingsView() {
     ${item('export', 'download', 'Export & backup', 'Excel, backup file, restore')}
     ${item('device', 'device', 'This device', 'Snapshots, demo data, erase, version')}
     <section class="card tap" data-act="toggle-sound"><div class="set-row"><div class="ic">${I.sound}</div><div><div class="t">Sounds & haptics</div><div class="s">Soft taps and chimes as you use the app</div></div><span class="switch ${state.settings.sound !== false ? 'on' : ''}" style="margin-left:auto"></span></div></section>
-    <p class="foot-note">Everything lives on this device only — no cloud, no account. Keep a backup now and then.<br><span class="faint">Version ${S.VERSION}</span></p>`;
+    <p class="foot-note">Everything lives on this device only — no cloud, no account. Keep a backup now and then.<br><button class="link" data-act="check-update" style="font-size:13px">Version ${S.VERSION} · check for updates</button></p>`;
 }
 
 // ================================================================ sheets
@@ -781,7 +781,7 @@ function settingsPage(page) {
     let used = 0; try { used = (localStorage.getItem('ledger.v1') || '').length + (localStorage.getItem('ledger.snapshots') || '').length; } catch { /* ignore */ }
     html = `<div class="section-head" style="margin-top:0"><h2>Daily snapshots</h2></div>
       <div class="card" style="padding:2px 18px">${snaps.length ? snaps.map((sn, i) => `<div class="line-item"><div class="grow"><div class="t">${esc(fmtDay(sn.date))}</div><div class="s">${sn.count} entries · ${new Date(sn.at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}</div></div><button class="btn sm ghost" data-snap="${i}">Restore</button></div>`).join('') : '<p class="faint" style="padding:14px 0;margin:0">A snapshot is kept each day you make changes.</p>'}</div>
-      <div class="btn-row" style="flex-direction:column"><button class="btn ghost" data-demo>Load demo data</button><button class="btn danger" data-erase>Erase everything</button></div>
+      <div class="btn-row" style="flex-direction:column"><button class="btn accent" data-act="check-update">Check for updates</button><button class="btn ghost" data-demo>Load demo data</button><button class="btn danger" data-erase>Erase everything</button></div>
       <p class="foot-note">Ledger ${S.VERSION} · ${(used / 1024).toFixed(1)} KB stored · ${state.entries.length} entries</p>`;
     mount = (sh) => sh.addEventListener('click', async (ev) => {
       const sn = ev.target.closest('[data-snap]')?.dataset.snap;
@@ -931,6 +931,21 @@ document.addEventListener('click', async (ev) => {
       if (state.settings.pinHash) { closeAllSheets(); ui.locked = true; renderLock(); X.play('off'); }
       else setPinFlow(() => render());
       break;
+    case 'check-update': {
+      toast('Checking for updates…');
+      try {
+        const res = await fetch(`./sw.js?check=${Date.now()}`, { cache: 'no-store' });
+        const live = (await res.text()).match(/VERSION = 'ledger-([^']+)'/)?.[1];
+        if (live && live === S.VERSION) { toast(`You're on the latest version (${S.VERSION})`); X.play('success'); break; }
+        const reg = await navigator.serviceWorker?.getRegistration();
+        await reg?.update();
+        // throw away the old offline copy so the reload can only get the new files
+        for (const k of await caches.keys()) await caches.delete(k);
+        toast(`Updating to ${live || 'the latest version'}…`);
+        setTimeout(() => location.reload(), 600);
+      } catch { warn('Couldn’t reach the internet. Try again when you’re online.'); }
+      break;
+    }
     case 'dismiss-passcode': try { localStorage.setItem('ledger.passcodeHint', '1'); } catch { /* ignore */ } render(); break;
     case 'toggle-hide': state.settings.hideAmounts = !state.settings.hideAmounts; commit(); break;
     case 'toggle-theme': {

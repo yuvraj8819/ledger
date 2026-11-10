@@ -1,5 +1,5 @@
 // Offline cache. Bump VERSION when files change so phones pick up the update.
-const VERSION = 'ledger-1.2.3';
+const VERSION = 'ledger-1.2.4';
 const FILES = ['./', './index.html', './css/app.css', './js/app.js', './js/calc.js', './js/store.js', './js/icons.js', './js/sfx.js', './manifest.webmanifest', './icons/icon.svg', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png'];
 
 // GitHub Pages lets browsers reuse files for 10 minutes. Every request here asks the server
