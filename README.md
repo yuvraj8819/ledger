@@ -37,7 +37,9 @@ python3 scripts/serve.py          # http://127.0.0.1:5178
 python3 scripts/serve.py --lan    # reachable from a phone on the same Wi-Fi
 ```
 
-On the phone, open the page and use **Share → Add to Home Screen** (iPhone) or **Install app** (Android). Service workers, and so installing and offline use, need HTTPS or `localhost`. Host it on GitHub Pages (Settings → Pages → deploy from `main`) for a real phone install.
+**On your phone:** open https://yuvraj8819.github.io/ledger/ , then on iPhone use Safari → **Share → Add to Home Screen**; on Android use the browser menu → **Install app**. It then opens full-screen like a normal app and works offline. Installing needs HTTPS, which GitHub Pages provides.
+
+On iPhone, Pay offers GPay, PhonePe and Paytm buttons, because iOS doesn't route a plain `upi://` link.
 
 ## Tests
 

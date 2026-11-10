@@ -274,11 +274,18 @@ export function evaluate(expr) {
 }
 
 // ---------- UPI ----------
-export function upiLink({ vpa, name, amount, note }) {
+// iPhones don't route a plain upi:// link, so each app gets its own scheme.
+export const UPI_APPS = {
+  default: { label: 'UPI app', prefix: 'upi://pay?' },
+  gpay: { label: 'GPay', prefix: 'tez://upi/pay?' },
+  phonepe: { label: 'PhonePe', prefix: 'phonepe://pay?' },
+  paytm: { label: 'Paytm', prefix: 'paytmmp://pay?' },
+};
+export function upiLink({ vpa, name, amount, note }, app = 'default') {
   const p = new URLSearchParams({ pa: vpa, pn: name || vpa, cu: 'INR' });
   if (amount) p.set('am', (amount / 100).toFixed(2));
   if (note) p.set('tn', note);
-  return `upi://pay?${p.toString()}`;
+  return (UPI_APPS[app] || UPI_APPS.default).prefix + p.toString();
 }
 export function parseUpi(text) {
   const t = String(text || '').trim();

@@ -121,6 +121,8 @@ test('UPI links round-trip', () => {
   const link = C.upiLink({ vpa: 'aman@okaxis', name: 'Aman K', amount: 45050, note: 'Dinner' });
   eq(link, 'upi://pay?pa=aman%40okaxis&pn=Aman+K&cu=INR&am=450.50&tn=Dinner');
   eq(C.parseUpi(link), { vpa: 'aman@okaxis', name: 'Aman K', amount: 45050 });
+  eq(C.upiLink({ vpa: 'a@b', amount: 100 }, 'gpay'), 'tez://upi/pay?pa=a%40b&pn=a%40b&cu=INR&am=1.00');
+  eq(C.upiLink({ vpa: 'a@b' }, 'phonepe').startsWith('phonepe://pay?'), true);
   eq(C.parseUpi('shop@paytm').vpa, 'shop@paytm'); eq(C.parseUpi('hello'), null);
 });
 test('CSV escapes commas and quotes', () => {

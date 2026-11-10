@@ -12,6 +12,10 @@ const ui = {
   locked: !!state.settings.pinHash,
   hiddenAt: 0,
 };
+const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const STANDALONE = !!navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+const hintKey = 'ledger.installHint';
+const showInstallHint = () => { if (STANDALONE) return false; try { return !localStorage.getItem(hintKey) && (IOS || /Android/.test(navigator.userAgent)); } catch { return false; } };
 const TABS = ['home', 'ledger', 'accounts', 'pay', 'settings'];
 if (!TABS.includes(ui.tab)) ui.tab = 'home';
 
@@ -173,7 +177,7 @@ function render() {
 // ================================================================ views
 function welcomeView() {
   return `<div class="welcome view">
-    <div class="lock" style="position:static;padding:0;background:none;align-items:flex-start"><div class="logo">${I.wallet}</div></div>
+    <div class="lock" style="position:static;padding:0;background:none;backdrop-filter:none;animation:none;align-items:flex-start"><div class="logo" style="width:68px;height:68px"><img src="icons/icon-192.png" alt="Ledger"></div></div>
     <h1>Every rupee,<br>accounted for.</h1>
     <p>A private ledger for cash, UPI and cards. It lives on this device only — no account, no cloud.</p>
     <div class="feature-list">
@@ -208,6 +212,7 @@ function homeView() {
   const wd = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
   return `
+  ${showInstallHint() ? `<section class="card install"><img class="logo-sm" src="icons/icon-192.png" alt=""><div><div class="t">Install Ledger</div><div class="s">${IOS ? `Tap Share ${I.up} then <b>Add to Home Screen</b> to open it like an app.` : 'Open your browser menu and choose <b>Install app</b> or <b>Add to Home screen</b>.'}</div></div><button class="x" data-act="dismiss-install" aria-label="Dismiss">${I.x}</button></section>` : ''}
   <section class="card hero">
     <div class="eyebrow">Total balance</div>
     <div class="total num money">${b.total < 0 ? '−' : ''}<span class="cur">₹</span><span id="total-num" data-v="${Math.abs(Math.round(b.total / 100))}">${nf0.format(Math.abs(Math.round(b.total / 100)))}</span></div>
@@ -602,7 +607,8 @@ function payFlow(target) {
     <div class="field"><label class="eyebrow" for="pay-note">Note <span class="faint">— shows in UPI too</span></label><input class="input" id="pay-note" placeholder="Chai, rent, split…"></div>
     <div class="field"><div class="eyebrow label">Category</div><div class="cats">${state.categories.map((c) => `<button class="cat" data-cat="${c.id}"><span class="e">${esc(c.icon)}</span>${esc(c.name)}</button>`).join('')}</div></div>
     <div class="field"><div class="eyebrow label">Account</div><div class="opts">${state.accounts.map((a, i) => `<button class="opt ${i === 0 ? 'on' : ''}" data-acc="${a.id}">${esc(a.name)}</button>`).join('')}</div></div>
-    <div class="btn-row"><button class="btn ghost" data-log>Just log it</button><button class="btn accent" data-upi>Open UPI app</button></div>
+    ${IOS ? `<div class="eyebrow" style="margin:20px 2px 8px">Pay with</div><div class="opts three">${['gpay', 'phonepe', 'paytm'].map((a) => `<button class="btn accent" data-upi="${a}" style="padding:14px 4px;font-size:14px">${C.UPI_APPS[a].label}</button>`).join('')}</div><button class="btn ghost" data-log style="margin-top:10px">Just log it</button>`
+      : `<div class="btn-row"><button class="btn ghost" data-log>Just log it</button><button class="btn accent" data-upi="default">Open UPI app</button></div>`}
     <p class="faint" style="font-size:12.5px;text-align:center;margin-top:14px">Your UPI app does the paying. Ledger never sees your PIN or bank details.</p>`);
   setTimeout(() => $('#pay-amt', sh).focus(), 300);
   const build = () => ({ id: S.uid(), createdAt: Date.now(), type: 'spent', method: 'upi', date: today(), time: nowTime(),
@@ -613,14 +619,14 @@ function payFlow(target) {
     if (c) { p.categoryId = p.categoryId === c.dataset.cat ? null : c.dataset.cat; $$('[data-cat]', sh).forEach((b) => b.classList.toggle('on', b.dataset.cat === p.categoryId)); return; }
     const a = ev.target.closest('[data-acc]');
     if (a) { p.accountId = a.dataset.acc; $$('[data-acc]', sh).forEach((b) => b.classList.toggle('on', b === a)); return; }
-    const isUpi = ev.target.closest('[data-upi]'), isLog = ev.target.closest('[data-log]');
+    const upiBtn = ev.target.closest('[data-upi]'), isUpi = !!upiBtn, isLog = ev.target.closest('[data-log]');
     if (!isUpi && !isLog) return;
     const entry = build();
     if (!(entry.amount > 0)) return warn('Enter an amount');
     closeSheet();
     if (isLog) { state.entries.push(entry); return commit(`Paid ${rs(entry.amount)} logged`); }
     try { sessionStorage.setItem('ledger.pendingPay', JSON.stringify(entry)); } catch { /* ignore */ }
-    location.href = C.upiLink({ vpa: target.vpa, name: target.name, amount: entry.amount, note: entry.note });
+    location.href = C.upiLink({ vpa: target.vpa, name: target.name, amount: entry.amount, note: entry.note }, upiBtn.dataset.upi);
     setTimeout(checkPendingPay, 1500);
   });
 }
@@ -855,7 +861,7 @@ function renderLock() {
   if (!ui.locked || !state.settings.pinHash) { el?.remove(); if (lockKeyHandler) { removeEventListener('keydown', lockKeyHandler); lockKeyHandler = null; } return; }
   if (el) return;
   el = document.createElement('div'); el.className = 'lock'; el.id = 'lock';
-  el.innerHTML = `<div class="logo">${I.lock}</div><h2>Ledger</h2><div class="sub">Enter your PIN</div>${pinPad('lk')}`;
+  el.innerHTML = `<div class="logo"><img src="icons/icon-192.png" alt="Ledger"></div><h2>Ledger</h2><div class="sub">Enter your PIN</div>${pinPad('lk')}`;
   document.body.append(el);
   let tries = 0;
   const press = wirePad(el, 'lk', async (pin) => {
@@ -899,6 +905,7 @@ document.addEventListener('click', async (ev) => {
       if (document.startViewTransition) { const vt = document.startViewTransition(flip); vt.ready?.catch(() => {}); vt.finished?.catch(() => {}); } else flip();
       break;
     }
+    case 'dismiss-install': try { localStorage.setItem(hintKey, '1'); } catch { /* ignore */ } render(); break;
     case 'toggle-sound': state.settings.sound = state.settings.sound === false; S.save(state); render(); X.play('success'); break;
     case 'close-sheet': if (!el.closest('.sheet-body') || el.classList.contains('btn')) closeSheet(); break;
     case 'safe-help': {
