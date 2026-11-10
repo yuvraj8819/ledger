@@ -10,7 +10,7 @@ import * as SC from './scan.js';
 // ================================================================ state
 let state = S.load();
 const ui = {
-  tab: (location.hash.slice(1) || 'home'),
+  tab: location.hash.slice(1) || null, // null = the launcher
   period: 'month',
   filter: 'all',
   locked: !!state.settings.pinHash,
@@ -22,9 +22,19 @@ const STANDALONE = !!navigator.standalone || matchMedia('(display-mode: standalo
 const hintKey = 'ledger.installHint';
 const showInstallHint = () => { if (STANDALONE) return false; try { return !localStorage.getItem(hintKey) && (IOS || /Android/.test(navigator.userAgent)); } catch { return false; } };
 const FINE = matchMedia('(pointer: fine)').matches; // mouse/trackpad, not a phone
-const TABS = ['home', 'ledger', 'health', 'accounts', 'pay', 'settings'];
+// Three apps share this page: Ledger (money), Health (steps and the money rules) and Diet & food.
+// Opening the page shows a launcher; each app has its own tabs and a back button to the launcher.
+const APPS = {
+  ledger: { name: 'Ledger', sub: 'Cash · UPI · Cards', tabs: [['home', 'Home', 'home'], ['ledger', 'Ledger', 'ledger'], ['accounts', 'Accounts', 'accounts'], ['pay', 'Pay', 'pay'], ['settings', 'Settings', 'settings']] },
+  health: { name: 'Health', sub: 'Steps · rewards · fines', tabs: [['health', 'Today', 'steps'], ['days', 'Days', 'clock'], ['rules', 'Setup', 'settings']] },
+  food: { name: 'Diet & food', sub: 'Calories · macros · water', tabs: [['food', 'Today', 'food'], ['meals', 'Meals', 'bowl'], ['body', 'Body', 'scale']] },
+};
+const TAB_APP = Object.fromEntries(Object.entries(APPS).flatMap(([a, x]) => x.tabs.map(([t]) => [t, a])));
+const TABS = Object.keys(TAB_APP);
 const bootHash = location.hash;
-if (!TABS.includes(ui.tab)) ui.tab = 'home';
+const appOf = (tab) => TAB_APP[tab] || null;
+// a link straight to a tab (or a steps link) opens it; otherwise start on the launcher
+if (!TABS.includes(ui.tab)) ui.tab = null;
 
 function commit(msg, sound = 'success') {
   S.save(state);
@@ -138,29 +148,47 @@ function groupedList(entries, { showDayTotal = true } = {}) {
 // ================================================================ shell
 function topbar() {
   const s = state.settings;
+  const a = APPS[appOf(ui.tab)];
   return `<header class="topbar">
-    <div class="brand"><h1>Ledger</h1><p>Cash · UPI · Cards</p></div>
+    ${a ? `<div class="brand with-back"><button class="icon-btn back" data-act="go-apps" aria-label="All apps">${I.back}</button><div><h1>${esc(a.name)}</h1><p>${esc(a.sub)}</p></div></div>`
+    : `<div class="brand"><h1>Ledger</h1><p>Money · Health · Food</p></div>`}
     <div class="top-actions">
-      <button class="icon-btn" data-act="search" aria-label="Search">${I.search}</button>
+      ${appOf(ui.tab) === 'ledger' ? `<button class="icon-btn" data-act="search" aria-label="Search">${I.search}</button>` : ''}
       <button class="icon-btn ${s.hideAmounts ? 'on' : ''}" data-act="toggle-hide" aria-label="${s.hideAmounts ? 'Show amounts' : 'Hide amounts'}">${s.hideAmounts ? I.eyeOff : I.eye}</button>
       <button class="icon-btn ${s.pinHash ? '' : 'dim'}" data-act="lock-now" aria-label="${s.pinHash ? 'Lock now' : 'Set a passcode'}">${I.lock}</button>
       <button class="icon-btn" data-act="toggle-theme" aria-label="Switch theme">${I.theme}</button>
     </div></header>`;
 }
-function tabbar() {
-  const t = (id, label) => `<button class="tab ${ui.tab === id ? 'on' : ''}" data-act="tab" data-tab="${id}" aria-label="${label}">${I[id]}<span>${label}</span></button>`;
-  return `<nav class="tabbar"><i class="ind" style="--i:${TABS.indexOf(ui.tab)}"></i>${t('home', 'Home')}${t('ledger', 'Ledger')}${t('health', 'Health')}${t('accounts', 'Accounts')}${t('pay', 'Pay')}${t('settings', 'Settings')}</nav>
-    <button class="fab" data-act="new-entry" aria-label="New entry">${I.plus}</button>
-    <button class="calc-fab" data-act="calc" aria-label="Calculator">=</button>`;
+function tabbar(app) {
+  const tabs = APPS[app].tabs;
+  const t = ([id, label, icon]) => `<button class="tab ${ui.tab === id ? 'on' : ''}" data-act="tab" data-tab="${id}" aria-label="${label}">${I[icon]}<span>${label}</span></button>`;
+  return `<nav class="tabbar" data-app="${app}" style="--n:${tabs.length}"><i class="ind" style="--i:${tabs.findIndex((x) => x[0] === ui.tab)}"></i>${tabs.map(t).join('')}</nav>
+    ${app !== 'health' ? `<button class="fab" data-act="new-entry" aria-label="${app === 'food' ? 'Add food' : 'New entry'}">${I.plus}</button>` : ''}
+    ${app === 'ledger' ? '<button class="calc-fab" data-act="calc" aria-label="Calculator">=</button>' : ''}`;
 }
 
-/** The tab bar and floating buttons are built once; later renders only move the highlight.
+/** The tab bar and floating buttons are built once per app; later renders only move the highlight.
  *  Rebuilding them made the frosted bar flash and the + button's glow restart on every tap. */
 function syncChrome() {
+  const app = appOf(ui.tab);
+  if (!app) { $('#chrome').innerHTML = ''; return; }
   let nav = $('#chrome .tabbar');
-  if (!nav) { $('#chrome').innerHTML = tabbar(); nav = $('#chrome .tabbar'); }
+  if (!nav || nav.dataset.app !== app) { $('#chrome').innerHTML = tabbar(app); nav = $('#chrome .tabbar'); }
   $$('.tab', nav).forEach((b) => b.classList.toggle('on', b.dataset.tab === ui.tab));
-  $('.ind', nav).style.setProperty('--i', TABS.indexOf(ui.tab));
+  $('.ind', nav).style.setProperty('--i', APPS[app].tabs.findIndex((x) => x[0] === ui.tab));
+}
+/** Switch tab. Entering an app from the launcher pushes history, so the phone's back gesture returns there. */
+function openTab(tab, { push = false } = {}) {
+  closeAllSheets();
+  if (appOf(tab) !== appOf(ui.tab) || tab === 'health' || tab === 'food') ui.hday = null;
+  ui.tab = tab;
+  if (push) history.pushState({ tab }, '', '#' + tab); else history.replaceState({ tab }, '', '#' + tab);
+  render(); window.scrollTo(0, 0);
+}
+function goApps() {
+  closeAllSheets(); ui.tab = null; ui.hday = null;
+  history.replaceState(null, '', location.pathname);
+  render(); window.scrollTo(0, 0);
 }
 
 function render() {
@@ -171,11 +199,13 @@ function render() {
   $('meta[name="theme-color"]')?.setAttribute('content', s.theme === 'light' ? '#f3f2ee' : '#08090a');
   const app = $('#app');
   if (!s.onboarded) { app.innerHTML = welcomeView(); $('#chrome').innerHTML = ''; return; }
-  const views = { home: homeView, ledger: ledgerView, health: healthView, accounts: accountsView, pay: payView, settings: settingsView };
+  const views = { home: homeView, ledger: ledgerView, accounts: accountsView, pay: payView, settings: settingsView,
+    health: healthView, days: daysView, rules: rulesView, food: foodView, meals: mealsView, body: bodyView };
+  const key = ui.tab || 'apps';
   const scroll = window.scrollY;
-  const same = app.dataset.tab === ui.tab;
-  app.innerHTML = topbar() + `<main class="view ${same ? (ui.fresh ? 'refresh' : '') : 'enter'}">${views[ui.tab]()}</main>`;
-  app.dataset.tab = ui.tab;
+  const same = app.dataset.tab === key;
+  app.innerHTML = topbar() + `<main class="view ${ui.tab ? '' : 'no-tabs'} ${same ? (ui.fresh ? 'refresh' : '') : 'enter'}">${ui.tab ? views[ui.tab]() : appsView()}</main>`;
+  app.dataset.tab = key;
   syncChrome();
   const tn = $('#total-num');
   if (tn) {
@@ -187,6 +217,34 @@ function render() {
   maskDigits(app);
   if (same) window.scrollTo(0, scroll);
   renderLock();
+}
+
+/** The launcher: one big card per app, each with today's headline. */
+function appsView() {
+  const b = C.balances(state);
+  const h = state.health, t = today();
+  const td = h.days[t] || {};
+  const v = H.verdict(td, H.rulesOf(h));
+  const waiting = h.enabled ? H.waitingDays(h) : [];
+  const tg = TG();
+  const eaten = N.totals(td.meals || []);
+  const water = (h.water[t] || []).reduce((s, x) => s + x, 0);
+  const hr = new Date().getHours();
+  const card = (app, icon, cls, big, sub, tag = '') => `<button class="app-card ${cls}" data-act="open-app" data-app="${app}">
+    <div class="app-ic">${icon}</div>
+    <div class="app-mid"><div class="app-name">${esc(APPS[app].name)}${tag}</div><div class="app-big num">${big}</div><div class="app-sub">${sub}</div></div>
+    <span class="chev">${I.chev}</span></button>`;
+  return `<div class="apps-hello"><div class="eyebrow">${esc(new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' }))}</div>
+      <h2>${hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening'}${state.settings.name ? `, ${esc(state.settings.name)}` : ''}</h2></div>
+    <div class="app-cards">
+      ${card('ledger', I.wallet, 'c-ledger', `<span class="money">${rs(b.total)}</span>`, 'Total balance')}
+      ${card('health', I.steps, 'c-health', h.enabled ? `${v.stepsKnown ? nf0.format(v.steps) : '—'}<small> / ${nf0.format(h.stepGoal)} steps</small>` : 'Earn for walking',
+    h.enabled ? (waiting.length ? `${esc(fmtDay(waiting[0]))} is waiting for its steps` : `If today ended now: ${v.net ? rs(v.net, { sign: true }) : '₹0'}`) : `+${rs(h.reward)} for ${nf0.format(h.stepGoal)} steps, −${rs(h.penalty)} if not`,
+    waiting.length ? '<span class="tag warn">sync</span>' : '')}
+      ${card('food', I.food, 'c-food', `${nf0.format(Math.max(0, h.calorieGoal - eaten.kcal))}<small> kcal left</small>`,
+    `${nf0.format(eaten.kcal)} eaten${tg ? ` · protein ${Math.round(eaten.p)}/${tg.protein} g` : ''}${water ? ` · ${(water / 1000).toFixed(1)} L water` : ''}`)}
+    </div>
+    <p class="foot-note">The three are linked: your steps and food settle into your ledger balance every night.</p>`;
 }
 
 // ================================================================ views
@@ -257,7 +315,6 @@ function homeView() {
     <button class="stat" data-act="goto-ledger" data-filter="received" style="text-align:left"><div class="eyebrow">Received</div><div class="v pos">${money(month.received)}</div></button>
   </div>
 
-  ${healthHomeRow()}
   ${owed > 0 ? `<button class="row" data-act="tab" data-tab="accounts" style="margin-top:12px"><div class="ic" style="background:rgba(244,183,64,.14);color:var(--warn)">${I.user}</div><div class="mid"><div class="t">People owe you ${money(owed)}</div><div class="s">Tap to settle up</div></div><span class="chev">${I.chev}</span></button>` : ''}
   ${showRewindCta ? `<button class="row rw-cta" data-act="rewind" style="margin-top:12px"><div class="ic" style="background:var(--accent-soft);color:var(--accent)">${I.sparkle}</div><div class="mid"><div class="t">Your ${rw.label.toLowerCase() === 'last week' ? 'week' : rw.label} rewind is ready</div><div class="s">See where the money went</div></div><span class="chev">${I.chev}</span></button>` : ''}
 
@@ -947,16 +1004,6 @@ function rulesList(h) {
   </ul>`;
 }
 
-function healthHomeRow() {
-  const h = state.health;
-  if (!h.enabled) return `<button class="row" data-act="tab" data-tab="health" style="margin-top:12px"><div class="ic" style="background:var(--pos-soft);color:var(--pos)">${I.steps}</div><div class="mid"><div class="t">Earn ${rs(h.reward)} a day for walking</div><div class="s">Link steps and food to your balance</div></div><span class="chev">${I.chev}</span></button>`;
-  const t = today(), d = h.days[t] || {};
-  const v = H.verdict(d, H.rulesOf(h));
-  const waiting = H.waitingDays(h);
-  const sub = waiting.length ? `${fmtDay(waiting[0])} is waiting for its steps` : `If today ended now: ${v.net ? rs(v.net, { sign: true }) : 'nothing in or out'}`;
-  return `<button class="row" data-act="tab" data-tab="health" style="margin-top:12px"><div class="ic" style="background:var(--pos-soft);color:var(--pos)">${I.steps}</div><div class="mid"><div class="t">${v.stepsKnown ? nf0.format(v.steps) : '—'} steps · ${kcal(v.kcal)} today</div><div class="s">${esc(sub)}</div></div>${waiting.length ? '<span class="tag warn">sync</span>' : ''}<span class="chev">${I.chev}</span></button>`;
-}
-
 function healthIntro() {
   const h = state.health;
   return `<div class="section-head" style="margin-top:4px"><h2>Health</h2></div>
@@ -987,6 +1034,17 @@ function verdictCard(d, day, rules) {
   return `<section class="card verdict"><div class="eyebrow">Money</div><div class="t" style="margin-top:6px">${t1}</div>${show ? amts(v) : ''}<div class="s">${esc(s1.trim())}</div></section>`;
 }
 
+/** ‹ Today › day switcher, shared by Health and Diet & food. */
+function dayNav(d, minDate) {
+  const t = today();
+  return `<div class="h-nav">
+    <button class="icon-btn" data-act="h-shift" data-n="-1" aria-label="Previous day" ${minDate && d <= minDate ? 'disabled' : ''}>${I.back}</button>
+    <div class="when"><b>${esc(fmtDay(d))}</b><span>${d === t ? 'so far' : C.parseDate(d).toLocaleDateString('en-IN', { weekday: 'long' })}</span></div>
+    <button class="icon-btn fwd" data-act="h-shift" data-n="1" aria-label="Next day" ${d >= t ? 'disabled' : ''}>${I.back}</button>
+  </div>`;
+}
+
+// ---------------------------------------------------------------- Health app
 function healthView() {
   const h = state.health;
   if (!h.enabled) return healthIntro();
@@ -994,28 +1052,11 @@ function healthView() {
   const day = h.days[d] || { steps: null, meals: [] };
   const rules = day.rules || H.rulesOf(h);
   const v = H.verdict(day, rules);
-  const limit = rules.calorieGoal + rules.overMargin;
   const stepPct = v.stepsKnown ? Math.min(1, v.steps / rules.stepGoal) : 0;
-  const kcalPct = limit ? Math.min(1, v.kcal / limit) : 0;
-  const meals = (day.meals || []).slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-  const month = H.healthSummary(state, `${C.monthKey(t)}-01`, t);
   const waiting = H.waitingDays(h);
-  const hist = [];
-  for (let x = C.addDays(t, -1); x >= h.startDate && hist.length < 14; x = C.addDays(x, -1)) hist.push(x);
-  const histRow = (x) => {
-    const r = h.days[x] || {}; const rr = r.rules || H.rulesOf(h); const vv = H.verdict(r, rr);
-    const done = H.stepsFinal(x, r, rr.stepGoal);
-    return `<button class="row" data-act="h-day" data-d="${x}"><div class="ic ${done ? (vv.net >= 0 ? 'in' : 'out') : ''}">${done ? (vv.penalty ? '✕' : '✓') : '…'}</div>
-      <div class="mid"><div class="t">${esc(fmtDay(x))}</div><div class="s">${vv.stepsKnown ? nf0.format(vv.steps) : '—'} steps · ${kcal(vv.kcal)}${vv.cheat ? ' · cheat meal' : ''}</div></div>
-      <div class="amt ${done && vv.net > 0 ? 'in' : ''}">${done ? money(vv.net, { sign: true }) : '<span class="tag warn">sync</span>'}</div></button>`;
-  };
-  return `
-  <div class="h-nav">
-    <button class="icon-btn" data-act="h-shift" data-n="-1" aria-label="Previous day" ${d <= h.startDate && !h.days[C.addDays(d, -1)] ? 'disabled' : ''}>${I.back}</button>
-    <div class="when"><b>${esc(fmtDay(d))}</b><span>${d === t ? 'so far' : C.parseDate(d).toLocaleDateString('en-IN', { weekday: 'long' })}</span></div>
-    <button class="icon-btn fwd" data-act="h-shift" data-n="1" aria-label="Next day" ${d >= t ? 'disabled' : ''}>${I.back}</button>
-  </div>
-
+  const month = H.healthSummary(state, `${C.monthKey(t)}-01`, t);
+  const limit = rules.calorieGoal + rules.overMargin;
+  return `${dayNav(d, h.days[C.addDays(d, -1)] ? null : h.startDate)}
   ${waiting.length && d === t ? `<button class="row" data-act="h-day" data-d="${waiting[0]}"><div class="ic" style="background:rgba(244,183,64,.14);color:var(--warn)">${I.watch}</div><div class="mid"><div class="t">${waiting.length === 1 ? `${esc(fmtDay(waiting[0]))} needs its steps` : `${waiting.length} days need their steps`}</div><div class="s">They settle once the day's count is in</div></div><span class="chev">${I.chev}</span></button>` : ''}
 
   <section class="card h-card">
@@ -1026,26 +1067,93 @@ function healthView() {
     <div class="h-btns"><button class="btn accent" data-act="h-paste" data-d="${d}">${I.watch} Paste from Health</button><button class="btn ghost" data-act="h-steps" data-d="${d}">Type steps</button></div>
   </section>
 
-  ${foodCard(d, day, rules, v, limit, kcalPct, meals)}
-  ${waterCard(d)}
+  <button class="row" data-act="open-app" data-app="food" data-day="${d}" style="margin-top:12px"><div class="ic">${I.food}</div>
+    <div class="mid"><div class="t">${kcal(v.kcal)} eaten${v.cheat ? '<span class="tag warn">cheat</span>' : ''}</div><div class="s">${v.overate ? `Over the ${kcal(limit)} limit · −${rs(rules.penalty)}` : `Limit ${kcal(limit)} · log food in Diet & food`}</div></div><span class="chev">${I.chev}</span></button>
 
   ${verdictCard(d, day, rules)}
-  ${d === t ? weightCard() : ''}
 
   <div class="eyebrow" style="margin:18px 4px 0">This month</div>
   <div class="stats" style="margin-top:8px">
     <div class="stat"><div class="eyebrow">Earned</div><div class="v pos">${money(month.earned)}</div></div>
     <div class="stat"><div class="eyebrow">Lost</div><div class="v neg">${money(month.lost)}</div></div>
     <div class="stat"><div class="eyebrow">Good days</div><div class="v">${month.good}/${month.good + month.bad}</div></div>
+  </div>`;
+}
+
+function daysView() {
+  const h = state.health;
+  if (!h.enabled) return healthIntro();
+  const t = today();
+  const hist = [];
+  for (let x = C.addDays(t, -1); x >= h.startDate && hist.length < 60; x = C.addDays(x, -1)) hist.push(x);
+  const all = H.healthSummary(state, h.startDate, t);
+  const histRow = (x) => {
+    const r = h.days[x] || {}; const rr = r.rules || H.rulesOf(h); const vv = H.verdict(r, rr);
+    const done = H.stepsFinal(x, r, rr.stepGoal);
+    return `<button class="row" data-act="h-day" data-d="${x}"><div class="ic ${done ? (vv.net >= 0 ? 'in' : 'out') : ''}">${done ? (vv.penalty ? '✕' : '✓') : '…'}</div>
+      <div class="mid"><div class="t">${esc(fmtDay(x))}</div><div class="s">${vv.stepsKnown ? nf0.format(vv.steps) : '—'} steps · ${kcal(vv.kcal)}${vv.cheat ? ' · cheat meal' : ''}</div></div>
+      <div class="amt ${done && vv.net > 0 ? 'in' : ''}">${done ? money(vv.net, { sign: true }) : '<span class="tag warn">sync</span>'}</div></button>`;
+  };
+  return `<div class="section-head" style="margin-top:4px"><h2>Since ${esc(fmtDay(h.startDate))}</h2></div>
+  <div class="stats">
+    <div class="stat"><div class="eyebrow">Earned</div><div class="v pos">${money(all.earned)}</div></div>
+    <div class="stat"><div class="eyebrow">Lost</div><div class="v neg">${money(all.lost)}</div></div>
+    <div class="stat"><div class="eyebrow">Net</div><div class="v ${all.net < 0 ? 'neg' : 'pos'}">${money(all.net, { sign: true })}</div></div>
   </div>
+  ${hist.length ? `<div class="section-head"><h2>Past days</h2></div><div class="list">${hist.map(histRow).join('')}</div>` : '<div class="empty"><b>No finished days yet</b>Today settles after midnight.</div>'}`;
+}
 
-  ${hist.length ? `<div class="section-head"><h2>Past days</h2></div><div class="list">${hist.map(histRow).join('')}</div>` : ''}
+function rulesView() {
+  const h = state.health;
+  const row = (act, icon, t, s, extra = '') => `<section class="card tap" data-act="${act}" ${extra}><div class="set-row"><div class="ic">${I[icon]}</div><div><div class="t">${t}</div><div class="s">${s}</div></div><span class="go">${I.arrow}</span></div></section>`;
+  return `<div class="section-head" style="margin-top:4px"><h2>Setup</h2></div>
+  ${h.enabled ? `<section class="card">${rulesList(h)}</section>` : ''}
+  ${row('h-connect', 'watch', 'Connect Apple Watch', 'Send your steps from Apple Health with a Shortcut')}
+  ${row(h.enabled ? 'h-rules' : 'h-setup', 'rupee', 'Goals & money', h.enabled ? `${nf0.format(h.stepGoal)} steps · ${kcal(h.calorieGoal)} · +${rs(h.reward)} / −${rs(h.penalty)}` : 'Off. Turn the rules on')}`;
+}
 
-  <div class="section-head"><h2>Setup</h2></div>
-  <section class="card tap" data-act="h-body"><div class="set-row"><div class="ic">${I.scale}</div><div><div class="t">Body & goal</div><div class="s">${h.profile ? `${h.profile.weightKg} kg · ${esc(N.GOALS[h.profile.goal])} · ${kcal(TG()?.target || h.calorieGoal)} target` : 'Work out your calories, protein, carbs and fat'}</div></div><span class="go">${I.arrow}</span></div></section>
-  <section class="card tap" data-act="h-recipes"><div class="set-row"><div class="ic">${I.bowl}</div><div><div class="t">Your meals & foods</div><div class="s">${state.health.recipes.length} meals · ${state.health.foods.length} scanned or added foods</div></div><span class="go">${I.arrow}</span></div></section>
-  <section class="card tap" data-act="h-connect"><div class="set-row"><div class="ic">${I.watch}</div><div><div class="t">Connect Apple Watch</div><div class="s">Send your steps from Apple Health with a Shortcut</div></div><span class="go">${I.arrow}</span></div></section>
-  <section class="card tap" data-act="h-rules"><div class="set-row"><div class="ic">${I.rupee}</div><div><div class="t">Goals & money</div><div class="s">${nf0.format(h.stepGoal)} steps · ${kcal(h.calorieGoal)} · +${rs(h.reward)} / −${rs(h.penalty)}</div></div><span class="go">${I.arrow}</span></div></section>`;
+// ---------------------------------------------------------------- Diet & food app
+function foodView() {
+  const h = state.health;
+  const t = today(), d = healthDay();
+  const day = h.days[d] || { steps: null, meals: [] };
+  const rules = day.rules || H.rulesOf(h);
+  const v = H.verdict(day, rules);
+  const limit = rules.calorieGoal + rules.overMargin;
+  const kcalPct = limit ? Math.min(1, v.kcal / limit) : 0;
+  const meals = (day.meals || []).slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  return `${dayNav(d, C.addDays(t, -90))}
+  ${!h.profile ? `<section class="card install" style="margin-bottom:12px"><div class="ic-lock">${I.scale}</div><div><div class="t">Set your body & goal</div><div class="s">Get your calorie, protein, carbs and fat targets.</div></div><button class="btn sm accent" data-act="h-body" style="margin-left:auto">Set</button></section>` : ''}
+  ${foodCard(d, day, rules, v, limit, kcalPct, meals)}
+  ${waterCard(d)}`;
+}
+
+function mealsView() {
+  const h = state.health;
+  const src = { scanned: 'Scanned', label: 'From a label', hand: 'Added by hand' };
+  return `<div class="section-head" style="margin-top:4px"><h2>Your meals</h2><button class="link" data-act="h-new-meal">+ New meal</button></div>
+  ${h.recipes.length ? `<div class="list">${h.recipes.map((r) => { const f = recipeFood(r); return `<div class="row" style="cursor:default"><div class="ic">🥘</div><div class="mid"><div class="t">${esc(r.name)}</div><div class="s">${kcal(f.n.kcal)} a serving · ${r.items.length} item${r.items.length === 1 ? '' : 's'}</div></div><button class="btn sm ghost" data-act="h-edit-meal" data-id="${r.id}">Edit</button><button class="btn sm accent" data-act="h-log-meal" data-id="${r.id}">Log</button></div>`; }).join('')}</div>`
+    : '<div class="empty"><b>No meals yet</b>Build a dish you make often, like fried rice, from its ingredients. Then log it in one tap.</div>'}
+  <div class="section-head"><h2>Your foods</h2><span class="faint" style="font-size:12.5px">${h.foods.length}</span></div>
+  ${h.foods.length ? `<div class="list">${h.foods.slice().reverse().map((f) => `<div class="row" style="cursor:default"><div class="ic">${f.source === 'scanned' ? '▥' : f.source === 'label' ? '📷' : '✎'}</div><div class="mid"><div class="t">${esc(f.name)}</div><div class="s">${esc([f.brand, src[f.source], `${f.n.kcal} kcal per ${f.serving.label}`].filter(Boolean).join(' · '))}</div></div><button class="btn sm ghost" data-act="h-log-food" data-id="${f.id}">Log</button><button class="btn sm danger" data-act="h-del-food" data-id="${f.id}" aria-label="Delete">${I.trash}</button></div>`).join('')}</div>`
+    : '<div class="empty"><b>Nothing scanned yet</b>Barcodes you scan and labels you read are kept here.</div>'}
+  <div class="h-btns" style="margin-top:16px"><button class="btn ghost" data-act="h-food">${I.search} Browse ${F.FOODS.length} built-in foods</button></div>`;
+}
+
+function bodyView() {
+  const h = state.health; const p = h.profile; const tg = TG();
+  if (!p) return `<section class="card hero"><div class="eyebrow">Body & goal</div><p class="muted" style="margin:8px 0 14px;font-size:14.5px">Tell Ledger your age, height, weight and goal. It works out your calories, protein, carbs, fat and water, and your calorie target becomes the limit for the overeating rule.</p><button class="btn accent" data-act="h-body">Set it up</button></section>${weightCard()}`;
+  const b = N.bmi(p); const bl = N.bmiLabel(b, p.age);
+  return `<section class="card hero">
+    <div class="kc-row"><div><div class="eyebrow">Daily target</div><div class="h-big num">${nf0.format(tg.target)}<small>kcal</small></div></div><div class="eaten"><span class="eyebrow">Maintenance</span><b class="num">${nf0.format(tg.maintenance)}</b></div></div>
+    <div class="tg-grid"><div><span>Protein</span><b class="num">${tg.protein} g</b></div><div><span>Carbs</span><b class="num">${tg.carbs} g</b></div><div><span>Fat</span><b class="num">${tg.fat} g</b></div><div><span>Fibre</span><b class="num">${tg.fibre} g</b></div><div><span>Sugar max</span><b class="num">${tg.sugarMax} g</b></div><div><span>Water</span><b class="num">${tg.water} L</b></div></div>
+    <div class="divider"></div>
+    <div class="s faint" style="font-size:13px">${p.age} yrs · ${p.heightCm} cm · ${p.weightKg} kg${p.bodyFat ? ` · ${p.bodyFat}% fat` : ''} · BMI ${b}${bl ? ` (${bl})` : ''} · ${esc(N.GOALS[p.goal])}${p.goal !== 'maintain' ? ` ${tg.pace} kg/wk${tg.pace < p.pace ? ' (capped)' : ''}` : ''}</div>
+    ${h.calorieGoal !== tg.target ? `<p class="faint" style="font-size:12.5px;margin:8px 0 0">Your calorie goal is set by hand to ${kcal(h.calorieGoal)} in Health → Setup.</p>` : ''}
+    <button class="btn ghost" data-act="h-body" style="margin-top:14px">${I.edit} Change body & goal</button>
+  </section>
+  ${weightCard()}
+  <div class="notes" style="margin-top:14px">${tg.notes.map((n) => `<div class="note ${n.warn ? 'warn' : ''}"><b>${esc(n.t)}</b><span>${esc(n.s)}</span></div>`).join('')}</div>`;
 }
 
 function rulesSheet(first = false) {
@@ -1199,7 +1307,7 @@ document.addEventListener('click', (ev) => {
   const d = el.dataset.d;
   switch (el.dataset.act) {
     case 'h-rules': rulesSheet(el.dataset.first === '1'); break;
-    case 'h-setup': profileSheet(true); break;
+    case 'h-setup': if (state.health.profile) rulesSheet(true); else profileSheet(true); break;
     case 'h-connect': connectSheet(); break;
     case 'h-shift': { const n = C.addDays(healthDay(), Number(el.dataset.n)); ui.hday = n >= today() ? null : n; ui.fresh = false; render(); break; }
     case 'h-day': openHealthDay(d); break;
@@ -1253,7 +1361,7 @@ function foodCard(d, day, rules, v, limit, kcalPct, meals) {
     <div class="head"><div class="eyebrow">${I.food} Food</div><span class="faint" style="font-size:12px">goal ${kcal(rules.calorieGoal)}</span></div>
     <div class="kc-row"><div class="h-big num">${nf0.format(Math.max(0, rules.calorieGoal - v.kcal))}<small>kcal left</small></div><div class="eaten"><span class="eyebrow">Eaten</span><b class="num">${nf0.format(v.kcal)}</b></div></div>
     <div class="meter ${v.overate ? 'over' : kcalPct > .85 ? 'low' : ''}" style="margin-top:12px"><i style="width:${(kcalPct * 100).toFixed(1)}%"></i></div>
-    <div class="foot">${v.cheat ? `Cheat meal logged · <b class="neg">−${rs(rules.penalty)}</b>` : v.overByCalories ? `${kcal(v.over)} over your goal · <b class="neg">−${rs(rules.penalty)}</b>` : `${kcal(Math.max(0, limit - v.kcal))} left before the ${kcal(limit)} limit`}</div>
+    <div class="foot">${!state.health.enabled ? `Goal ${kcal(rules.calorieGoal)}` : v.cheat ? `Cheat meal logged · <b class="neg">−${rs(rules.penalty)}</b>` : v.overByCalories ? `${kcal(v.over)} over your goal · <b class="neg">−${rs(rules.penalty)}</b>` : `${kcal(Math.max(0, limit - v.kcal))} left before the ${kcal(limit)} limit`}</div>
     ${macroBars(t, tg)}
     ${tg ? `<button class="link" data-act="h-breakdown" data-d="${d}" style="margin-top:10px;font-size:13px">Full breakdown →</button>` : `<button class="link" data-act="h-body" style="margin-top:10px;font-size:13px">Set your body & goal for protein, carbs and fat targets →</button>`}
     <div class="qas">${quick('h-scan', I.barcode, 'Scan')}${quick('h-label', I.camera, 'Label')}${quick('h-recipes', I.bowl, 'Meal')}${quick('h-food', I.plus, 'Food')}</div>
@@ -1439,6 +1547,7 @@ function amountSheet(food, { day, mode = 'log', onPick, existing } = {}) {
     else rec.meals.push({ ...item, id: S.uid(), time: a.time, cheat: a.cheat });
     closeAllSheets();
     if (!existing && day !== healthDay()) ui.hday = day;
+    if (!existing && ui.tab === 'meals') { ui.tab = 'food'; history.replaceState({ tab: 'food' }, '', '#food'); }
     healthCommit(existing ? 'Saved' : `${food.name} · ${kcal(item.kcal)} added`);
   });
 }
@@ -1606,6 +1715,15 @@ document.addEventListener('click', (ev) => {
   const d = el.dataset.d || healthDay();
   switch (el.dataset.act) {
     case 'h-body': profileSheet(); break;
+    case 'h-new-meal': recipeSheet(); break;
+    case 'h-edit-meal': recipeSheet(state.health.recipes.find((x) => x.id === el.dataset.id)); break;
+    case 'h-log-meal': { const r = state.health.recipes.find((x) => x.id === el.dataset.id); if (r) amountSheet(recipeFood(r), { day: today() }); break; }
+    case 'h-log-food': { const f = state.health.foods.find((x) => x.id === el.dataset.id); if (f) amountSheet(f, { day: today() }); break; }
+    case 'h-del-food': {
+      const f = state.health.foods.find((x) => x.id === el.dataset.id);
+      ask(`Delete ${esc(f.name)}?`, 'Days you already logged it keep their calories.', 'Delete', true).then((yes) => { if (yes) { state.health.foods = state.health.foods.filter((x) => x.id !== f.id); S.save(state); render(); toast('Deleted'); } });
+      break;
+    }
     case 'h-scan': scanSheet(d); break;
     case 'h-label': labelFlow(d); break;
     case 'h-recipes': recipesSheet(d); break;
@@ -1684,11 +1802,13 @@ document.addEventListener('click', async (ev) => {
   const act = el.dataset.act;
   const inSheet = !!el.closest('.sheet');
   switch (act) {
-    case 'tab': closeAllSheets(); if (el.dataset.tab === 'health') ui.hday = null; ui.tab = el.dataset.tab; history.replaceState(null, '', '#' + ui.tab); render(); window.scrollTo({ top: 0 }); break;
-    case 'goto-ledger': ui.tab = 'ledger'; ui.period = 'month'; ui.filter = el.dataset.filter; history.replaceState(null, '', '#ledger'); render(); window.scrollTo({ top: 0 }); break;
+    case 'tab': openTab(el.dataset.tab); break;
+    case 'open-app': { const day = el.dataset.day; openTab(APPS[el.dataset.app].tabs[0][0], { push: !ui.tab }); if (day && day !== today()) { ui.hday = day; render(); } break; }
+    case 'go-apps': goApps(); break;
+    case 'goto-ledger': ui.period = 'month'; ui.filter = el.dataset.filter; openTab('ledger'); break;
     case 'period': ui.period = el.dataset.v; render(); break;
     case 'filter': ui.filter = el.dataset.v; render(); break;
-    case 'new-entry': if (ui.tab === 'health' && state.health.enabled) pickFood({ day: healthDay() }); else entrySheet(null); break;
+    case 'new-entry': if (appOf(ui.tab) === 'food') pickFood({ day: healthDay() }); else entrySheet(null); break;
     case 'open-entry': { const e = byId(state.entries, el.dataset.id); if (e?.health) { closeAllSheets(); openHealthDay(e.health.day); } else if (e) { if (inSheet) closeAllSheets(); entrySheet(e); } break; }
     case 'calc': openCalc(); break;
     case 'search': openSearch(); break;
@@ -1769,7 +1889,10 @@ document.addEventListener('click', (ev) => {
   X.play(t.matches('.key, .pad button') ? 'key' : t.matches('.tab') ? 'tab' : t.matches('.check, [data-switch]') ? (t.querySelector('.on, .switch.on') || t.classList.contains('on') ? 'off' : 'on') : 'tick');
 }, true);
 addEventListener('keydown', (e) => { if (e.key === 'Escape' && sheetStack.length) closeSheet(); });
-addEventListener('hashchange', () => { const t = location.hash.slice(1); if (TABS.includes(t) && t !== ui.tab) { closeAllSheets(); ui.tab = t; render(); window.scrollTo(0, 0); } });
+// back gesture / back button: a hash that isn't a tab means the launcher
+const followHash = () => { const t = location.hash.slice(1); const next = TABS.includes(t) ? t : null; if (next !== ui.tab) { closeAllSheets(); ui.tab = next; ui.hday = null; render(); window.scrollTo(0, 0); } };
+addEventListener('hashchange', followHash);
+addEventListener('popstate', followHash);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { ui.hiddenAt = Date.now(); return; }
   if (state.settings.pinHash && ui.hiddenAt && Date.now() - ui.hiddenAt >= (state.settings.lockAfter ?? 60) * 1000) { ui.locked = true; renderLock(); }

@@ -4,6 +4,15 @@ A private money ledger for cash, UPI and cards. It runs in the browser as an ins
 
 ## What it does
 
+Opening Ledger shows a launcher with three apps, each with today's headline: **Ledger** (money), **Health** (steps, with rewards and fines) and **Diet & food** (calories, macros, water). Tapping one opens just that app, with its own tabs. The back button, or the phone's back gesture, returns to the launcher. They share one set of data on the device, so steps and food still settle into the ledger balance every night.
+
+| App | Tabs |
+|---|---|
+| Ledger | Home · Ledger · Accounts · Pay · Settings |
+| Health | Today (steps, the day's money) · Days (every settled day) · Setup (Apple Watch, goals & money) |
+| Diet & food | Today (food, macros, water) · Meals (your meals and scanned foods) · Body (targets, weight) |
+
+
 | Screen | What's there |
 |---|---|
 | **Home** | Total balance split into cash and bank·UPI (plus credit card due), **safe to spend today** with a 7-day spending chart, this month's spent / for others / received, people who owe you, rewind prompt, recent entries |
