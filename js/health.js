@@ -23,6 +23,12 @@ export function defaultHealth() {
     penalty: 100000,         // paise
     method: 'upi',           // 'upi' moves the bank balance, 'cash' moves cash in hand
     accountId: null,         // bucket the money lands in (first account if empty)
+    profile: null,           // { sex, age, heightCm, weightKg, bodyFat, activity, goal, pace }
+    autoGoal: true,          // calorie goal follows the target from the profile
+    weights: [],             // [{ date, kg }]
+    foods: [],               // your scanned / label / hand-made foods
+    recipes: [],             // meals you make: { id, name, servings, items }
+    water: {},               // 'YYYY-MM-DD': [ml, ml, …]
     days: {},                // 'YYYY-MM-DD': { steps, stepsAt, stepsFrom, meals: [{ id, name, kcal, time, cheat }], rules? }
   };
 }

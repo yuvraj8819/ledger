@@ -17,6 +17,8 @@
 import * as C from '../js/calc.js';
 import * as S from '../js/store.js';
 import * as H from '../js/health.js';
+import * as N from '../js/nutrition.js';
+import * as F from '../js/foods.js';
 
 const results = [];
 const test = (name, fn) => { try { fn(); results.push([name, true]); } catch (e) { results.push([name, false, e.message]); } };
@@ -216,6 +218,67 @@ test('health: parse steps from shortcut text and links', () => {
 test('health: old saved data gets health defaults', () => {
   const st = S.parseBackup(JSON.stringify({ state: { accounts: [{ id: 'a', name: 'A' }], entries: [] } }));
   eq(st.health.enabled, false); eq(st.health.stepGoal, 10000); eq(st.health.penalty, 100000); eq(st.health.days, {});
+});
+
+// ---------- nutrition & foods ----------
+test('targets: adult, Mifflin-St Jeor, lose 0.5 kg/week', () => {
+  const t = N.targets({ sex: 'male', age: 30, heightCm: 175, weightKg: 80, activity: 'light', goal: 'lose', pace: 0.5 });
+  eq(t.bmr, 1749); eq(t.maintenance, Math.round(1749 * 1.375)); eq(t.target, Math.round(t.maintenance - 550));
+  if (t.protein < 100 || t.fat < 50) throw new Error('macros look off');
+});
+test('targets: under 18 caps the pace, holds at resting burn, carbs ≥ 130 g', () => {
+  const t = N.targets({ sex: 'male', age: 16, heightCm: 183, weightKg: 123.5, bodyFat: 48, activity: 'sedentary', goal: 'lose', pace: 1 });
+  eq(t.teen, true); if (t.pace > 0.5) throw new Error('pace not capped');
+  if (t.target < t.bmr) throw new Error('below resting burn'); if (t.carbs < 130) throw new Error('carbs under 130');
+  if (!t.notes.some((n) => /doctor/i.test(n.t))) throw new Error('no doctor note');
+});
+test('targets: never below resting burn for adults either', () => {
+  const t = N.targets({ sex: 'female', age: 40, heightCm: 155, weightKg: 52, activity: 'sedentary', goal: 'lose', pace: 1 });
+  if (t.target < t.bmr) throw new Error('below bmr');
+});
+test('BMI and no adult label under 18', () => { eq(N.bmi({ heightCm: 180, weightKg: 81 }), 25); eq(N.bmiLabel(25, 16), null); eq(N.bmiLabel(22, 30), 'Healthy'); });
+test('scale by grams and by servings', () => {
+  const f = { serving: { label: '1 pack', g: 70 }, n: { kcal: 310, p: 7, c: 44, f: 12, fib: 2, sug: 1.5, na: 1100 } };
+  eq(N.scale(f, { servings: 2 }).kcal, 620); eq(N.scale(f, { g: 35 }).kcal, 155); eq(N.scale(f, { g: 35 }).p, 3.5);
+  eq(N.amountLabel(f, { servings: 0.5 }), '½ × 1 pack'); eq(N.amountLabel(f, { g: 140 }), '140 g');
+});
+test('nutrient totals add up', () => { const t = N.totals([{ kcal: 100, p: 5 }, { kcal: 250.4, p: 2.25, na: 10 }]); eq([t.kcal, t.p, t.na, t.f], [350, 7.3, 10, 0]); });
+test('Open Food Facts product → food (incl. prepared-only values)', () => {
+  const f = N.offToFood('890', { product_name: 'Maggi', brands: 'Nestlé, Maggi', serving_quantity: 70, nutriments: { 'energy-kcal_prepared_100g': 384, proteins_100g: 8, sodium_100g: 1.2 } });
+  eq([f.n.kcal, f.n.p, f.n.na, f.brand, f.usualG], [384, 8, 1200, 'Nestlé', 70]);
+  eq(N.offToFood('1', { nutriments: {} }), null);
+  eq(N.offToFood('2', { nutriments: { 'energy-kj_100g': 1674 } }).n.kcal, 400);
+});
+test('label OCR text → nutrients (per 100 g column)', () => {
+  const r = N.parseLabel(`NUTRITION INFORMATION
+Per 100 g  Per serve (30 g)
+Energy (kcal) 512 154
+Protein (g) 7.2 2.2
+Carbohydrate (g) 58.4 17.5
+Total Sugars (g) 4.1 1.2
+Added Sugars (g) 3.0 0.9
+Dietary Fibre (g) 2.5 0.8
+Total Fat (g) 27.6 8.3
+Saturated Fat (g) 12.0 3.6
+Sodium (mg) 650 195`);
+  eq(r.n, { kcal: 512, p: 7.2, c: 58.4, f: 27.6, fib: 2.5, sug: 4.1, na: 650 }); eq(r.per100, true); eq(r.servingG, 30);
+});
+test('label with kJ and kcal on one line, comma decimals', () => {
+  const r = N.parseLabel('Energy 1674 kJ / 400 kcal\nProtein 10,5 g\nFat 20 g\nCarbohydrates 45 g');
+  eq([r.n.kcal, r.n.p, r.n.f, r.n.c], [400, 10.5, 20, 45]);
+});
+test('food search finds Indian dishes and chain menus', () => {
+  const top = (q) => F.searchFoods(q)[0]?.name;
+  eq(top('dal tadka restaurant'), 'Dal tadka (restaurant)'); eq(top('maggie'), 'Maggi 2-Minute Masala Noodles');
+  eq(top('farmhouse'), 'Farmhouse'); eq(F.searchFoods('farmhouse').some((f) => f.serving.label.startsWith('Medium')), true);
+  eq(F.searchFoods('veggie delite').some((f) => f.serving.label === 'Footlong' && f.n.kcal === 460), true);
+  eq(top('california burrito chicken').includes('Chicken'), true); eq(top('chole'), 'Chole (home)');
+  eq(F.searchFoods('', [], { brandGroup: 'Taco Bell' }).length >= 15, true);
+});
+test('food database is sane: energy roughly matches macros', () => {
+  const bad = F.FOODS.filter((f) => { if (/beer/i.test(f.name)) return false; const e = 4 * f.n.p + 4 * f.n.c + 9 * f.n.f; return f.n.kcal > 40 && Math.abs(e - f.n.kcal) / f.n.kcal > 0.3; });
+  if (bad.length) throw new Error(bad.slice(0, 5).map((f) => `${f.name} ${f.n.kcal} vs ${Math.round(4 * f.n.p + 4 * f.n.c + 9 * f.n.f)}`).join('; '));
+  const ids = new Set(F.FOODS.map((f) => f.id)); eq(ids.size, F.FOODS.length, 'unique ids');
 });
 
 const failed = results.filter((r) => !r[1]);

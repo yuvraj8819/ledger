@@ -1,6 +1,12 @@
 const s = (d, extra = '') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" ${extra}>${d}</svg>`;
 
 export const I = {
+  barcode: s('<path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13 8v8M16 8v8"/>'),
+  camera: s('<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>'),
+  bowl: s('<path d="M3 11h18a9 9 0 0 1-18 0z"/><path d="M8 7c0-1.5 1-2 1-3M12 7c0-1.5 1-2 1-3M16 7c0-1.5 1-2 1-3"/>'),
+  bolt: s('<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>'),
+  drop: s('<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>'),
+  scale: s('<rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8.5 9a5 5 0 0 1 7 0l-2.5 3"/>'),
   health: s('<path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 0 0-7.1 7.1L12 21.5l8.8-8.8a5 5 0 0 0 0-7.1z"/><path d="M3.5 12h4l2-3 3 6 2-3h6"/>'),
   steps: s('<path d="M8 3c1.7 0 2.5 1.8 2.5 4S9.6 12 8 12 5.5 9.2 5.5 7 6.3 3 8 3z"/><path d="M5.8 14.5h4.4l-.4 3a2 2 0 0 1-3.6 0z"/><path d="M16 7c1.7 0 2.5 1.8 2.5 4S17.6 16 16 16s-2.5-2.8-2.5-5S14.3 7 16 7z"/><path d="M13.8 18.5h4.4l-.3 1.6a2 2 0 0 1-3.8 0z"/>'),
   food: s('<path d="M4 3v7a3 3 0 0 0 3 3v8"/><path d="M10 3v7a3 3 0 0 1-3 3"/><path d="M7 3v6"/><path d="M17 21V3c-2.2 1.2-3.5 4-3.5 7.5 0 1.9 1.2 3 3.5 3"/>'),

@@ -40,6 +40,15 @@ Hitting the steps and overeating on the same day gives +₹500 and −₹1,000. 
 
 A day with no step count waits. So does a count taken before 11:30 PM that's under the goal, because that count isn't final yet. Nothing is fined without a final count.
 
+### Food: targets, search, barcodes and labels
+
+- **Body & goal** (first thing in setup): sex, age, height, weight, optional body fat, activity and goal. Ledger works out maintenance (Katch-McArdle with body fat, Mifflin-St Jeor without), a daily target, protein / carbs / fat, fibre, a sugar cap and water. Safety limits: never below your resting burn, weight loss capped at 1% of body weight a week, and under 18 at 0.5% (max 0.5 kg) with carbs held at 130 g or more and no adult BMI label. The target becomes the calorie goal for the overeating rule, and logging a new weight updates it.
+- **Built-in foods** (`js/foods.js`, about 420): Indian home food (rice, dal, rajma, chole, sabzi, rotis, South Indian, street food, sweets), quick foods (Maggi and other noodles, chips, biscuits, chocolate), drinks and coffee, and the Indian menus of Subway (6-inch and footlong), Domino's (regular, medium, large, sides), Pizza Hut, Taco Bell, California Burrito, McDonald's, KFC, Burger King and Starbucks. These are estimates. Home cooking varies, and chains change recipes.
+- **Log by servings or grams**, with protein, carbs, fat, fibre, sugar and sodium. **Meals**: build a dish from ingredients once and log it in one tap. **Quick add** takes calories alone. There's also **water** and **weight** with a 10-day average.
+- **Scan a barcode** with the camera, a photo or the typed number. The lookup goes to [Open Food Facts](https://world.openfoodfacts.org), a free public database, and only the barcode number is sent. Products are saved to your foods, so a second scan works offline.
+- **Read a label**: photograph the nutrition table and on-device OCR ([Tesseract.js](https://tesseract.projectnaptha.com)) fills in the numbers for you to check. Then you enter the grams you ate.
+- The scanner and OCR libraries load from jsDelivr the first time you use them.
+
 ### Look, motion and sound
 
 - **Glass:** cards, the tab bar, sheets and the lock screen are translucent and blur a slow-moving colour wash behind them. The tokens are the `--g-*` variables in the "v1.1" block of `css/app.css`.
@@ -67,7 +76,7 @@ On iPhone, Pay offers GPay, PhonePe and Paytm buttons, because iOS doesn't route
 
 ## Tests
 
-Open http://127.0.0.1:5178/tests/ with the server running. The page runs about 35 checks on the money and health logic: balances, transfers, safe to spend, people owed, recurring bills, rewind, calculator, UPI links, CSV and backups, and prints a pass/fail list.
+Open http://127.0.0.1:5178/tests/ with the server running. The page runs about 45 checks on the money, health and nutrition logic: balances, transfers, safe to spend, people owed, recurring bills, rewind, calculator, UPI links, CSV and backups, and prints a pass/fail list.
 
 ## Code map
 
@@ -75,6 +84,9 @@ Open http://127.0.0.1:5178/tests/ with the server running. The page runs about 3
 index.html            page shell
 css/app.css           all styles; theme tokens at the top (dark default, [data-theme=light])
 js/calc.js            pure money logic, no DOM; everything the tests cover
+js/nutrition.js       targets from body & goal, scaling foods, label text and barcode results (pure, tested)
+js/foods.js           built-in food list and search
+js/scan.js            camera barcode scanning, Open Food Facts lookup, label OCR
 js/health.js          steps + food rules: verdicts, settling into entries, step parsing (pure, tested)
 js/store.js           saved data shape, localStorage, snapshots, backups, PIN hashing, demo data
 js/app.js             screens, sheets, events

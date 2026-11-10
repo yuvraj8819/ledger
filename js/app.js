@@ -3,6 +3,9 @@ import * as S from './store.js';
 import { I } from './icons.js';
 import * as X from './sfx.js';
 import * as H from './health.js';
+import * as N from './nutrition.js';
+import * as F from './foods.js';
+import * as SC from './scan.js';
 
 // ================================================================ state
 let state = S.load();
@@ -961,7 +964,7 @@ function healthIntro() {
     <div class="eyebrow">Steps and food that move your money</div>
     <p class="muted" style="margin:8px 0 0;font-size:14.5px">Your Apple Watch steps and the food you log here settle into your ledger at the end of every day.</p>
     ${rulesList(h)}
-    <button class="btn accent" data-act="h-rules" data-first="1" style="margin-top:14px">Set it up</button>
+    <button class="btn accent" data-act="h-setup" style="margin-top:14px">Set it up</button>
   </section>
   <p class="foot-note">Steps arrive from Apple Health through a Shortcut on your iPhone. Setup shows you how.</p>`;
 }
@@ -1023,16 +1026,11 @@ function healthView() {
     <div class="h-btns"><button class="btn accent" data-act="h-paste" data-d="${d}">${I.watch} Paste from Health</button><button class="btn ghost" data-act="h-steps" data-d="${d}">Type steps</button></div>
   </section>
 
-  <section class="card h-card">
-    <div class="head"><div class="eyebrow">${I.food} Food</div><span class="faint" style="font-size:12px">goal ${kcal(rules.calorieGoal)}</span></div>
-    <div class="h-big num">${nf0.format(v.kcal)}<small>kcal</small></div>
-    <div class="meter ${v.overate ? 'over' : kcalPct > .85 ? 'low' : ''}" style="margin-top:12px"><i style="width:${(kcalPct * 100).toFixed(1)}%"></i></div>
-    <div class="foot">${v.cheat ? `Cheat meal logged · <b class="neg">−${rs(rules.penalty)}</b>` : v.overByCalories ? `${kcal(v.over)} over your goal · <b class="neg">−${rs(rules.penalty)}</b>` : `${kcal(Math.max(0, limit - v.kcal))} left before the ${kcal(limit)} limit`}</div>
-    ${meals.length ? `<div class="list" style="margin-top:12px">${meals.map((m) => `<button class="row" data-act="h-meal" data-d="${d}" data-id="${m.id}"><div class="ic ${m.cheat ? 'out' : ''}">${m.cheat ? '🍕' : '🍽️'}</div><div class="mid"><div class="t">${esc(m.name)}${m.cheat ? '<span class="tag warn">cheat</span>' : ''}</div><div class="s">${esc(fmtTime(m.time))}</div></div><div class="amt">${kcal(m.kcal)}</div></button>`).join('')}</div>` : ''}
-    <div class="h-btns"><button class="btn ${meals.length ? 'ghost' : 'accent'}" data-act="h-food" data-d="${d}">${I.plus} Add food</button></div>
-  </section>
+  ${foodCard(d, day, rules, v, limit, kcalPct, meals)}
+  ${waterCard(d)}
 
   ${verdictCard(d, day, rules)}
+  ${d === t ? weightCard() : ''}
 
   <div class="eyebrow" style="margin:18px 4px 0">This month</div>
   <div class="stats" style="margin-top:8px">
@@ -1044,6 +1042,8 @@ function healthView() {
   ${hist.length ? `<div class="section-head"><h2>Past days</h2></div><div class="list">${hist.map(histRow).join('')}</div>` : ''}
 
   <div class="section-head"><h2>Setup</h2></div>
+  <section class="card tap" data-act="h-body"><div class="set-row"><div class="ic">${I.scale}</div><div><div class="t">Body & goal</div><div class="s">${h.profile ? `${h.profile.weightKg} kg · ${esc(N.GOALS[h.profile.goal])} · ${kcal(TG()?.target || h.calorieGoal)} target` : 'Work out your calories, protein, carbs and fat'}</div></div><span class="go">${I.arrow}</span></div></section>
+  <section class="card tap" data-act="h-recipes"><div class="set-row"><div class="ic">${I.bowl}</div><div><div class="t">Your meals & foods</div><div class="s">${state.health.recipes.length} meals · ${state.health.foods.length} scanned or added foods</div></div><span class="go">${I.arrow}</span></div></section>
   <section class="card tap" data-act="h-connect"><div class="set-row"><div class="ic">${I.watch}</div><div><div class="t">Connect Apple Watch</div><div class="s">Send your steps from Apple Health with a Shortcut</div></div><span class="go">${I.arrow}</span></div></section>
   <section class="card tap" data-act="h-rules"><div class="set-row"><div class="ic">${I.rupee}</div><div><div class="t">Goals & money</div><div class="s">${nf0.format(h.stepGoal)} steps · ${kcal(h.calorieGoal)} · +${rs(h.reward)} / −${rs(h.penalty)}</div></div><span class="go">${I.arrow}</span></div></section>`;
 }
@@ -1053,8 +1053,8 @@ function rulesSheet(first = false) {
   const r = { ...h, accountId: h.accountId || state.accounts[0]?.id };
   const num = (id, label, val, hint, suffix = '') => `<div class="field"><label class="eyebrow" for="${id}">${label}</label><div class="amount-box">${suffix === '₹' ? '<span class="cur">₹</span>' : ''}<input id="${id}" class="num" inputmode="numeric" value="${val}" style="font-size:24px">${suffix && suffix !== '₹' ? `<span class="faint" style="font-size:15px;padding-right:6px">${suffix}</span>` : ''}</div>${hint ? `<p class="faint" style="font-size:12.5px;margin:6px 2px 0">${hint}</p>` : ''}</div>`;
   const body = () => `
-    ${first ? `<p class="lead" style="margin-top:0">Pick your daily calorie goal. The rest is already set the way you described, and you can change any of it.</p>` : ''}
-    ${num('r-kcal', 'Daily calorie goal', r.calorieGoal, '', 'kcal')}
+    ${first ? `<p class="lead" style="margin-top:0">Your calorie goal comes from your body & goal. The rest is set the way you described, and you can change any of it.</p>` : ''}
+    ${num('r-kcal', 'Daily calorie goal', r.calorieGoal, TG() ? `Your target from Body & goal is ${nf0.format(TG().target)} kcal. Change it here to set your own.` : '', 'kcal')}
     ${num('r-margin', 'Overeating starts at', r.overMargin, 'Calories over your goal that cost the penalty. A cheat meal always does.', 'kcal over')}
     ${num('r-steps', 'Daily step goal', r.stepGoal, '', 'steps')}
     <div class="opts" style="margin-top:0">
@@ -1080,6 +1080,7 @@ function rulesSheet(first = false) {
     pull();
     if (!(r.calorieGoal >= 800 && r.calorieGoal <= 6000)) return warn('Calorie goal should be between 800 and 6,000');
     if (!(r.stepGoal >= 1000) || !(r.overMargin >= 0) || !(r.reward >= 0) || !(r.penalty >= 0)) return warn('Check the numbers');
+    if (TG()) h.autoGoal = r.calorieGoal === TG().target;
     Object.assign(h, { calorieGoal: r.calorieGoal, overMargin: r.overMargin, stepGoal: r.stepGoal, reward: r.reward, penalty: r.penalty, method: r.method, accountId: r.accountId });
     if (!h.enabled) { h.enabled = true; h.startDate = h.startDate && !first ? h.startDate : today(); }
     // today isn't settled yet, so it picks up the new rules too
@@ -1120,11 +1121,12 @@ function foodSheet(d, meal) {
   const freq = meal ? [] : H.frequentFoods(h);
   const rules = h.days[d]?.rules || H.rulesOf(h);
   const before = H.caloriesOf(h.days[d]) - (meal ? Number(meal.kcal) || 0 : 0);
-  const sh = openSheet(meal ? 'Edit food' : `Add food · ${fmtDay(d)}`, `
+  const sh = openSheet(meal ? 'Edit food' : 'Quick add', `
     ${freq.length ? `<div class="eyebrow label" style="margin-top:0">Again?</div><div class="opts" style="flex-wrap:wrap">${freq.map((f, i) => `<button class="opt" data-ff="${i}">${esc(f.name)} · ${nf0.format(f.kcal)}</button>`).join('')}</div>` : ''}
     <div class="field" ${freq.length ? '' : 'style="margin-top:0"'}><label class="eyebrow" for="fd-name">What did you eat?</label><input class="input" id="fd-name" value="${esc(m.name)}" placeholder="Dal rice, 2 rotis, chai…" autocomplete="off"></div>
     <div class="field"><label class="eyebrow" for="fd-kcal">Calories</label><div class="amount-box"><input id="fd-kcal" class="num" inputmode="numeric" placeholder="0" value="${m.kcal}" style="font-size:26px"><span class="faint" style="font-size:15px;padding-right:6px">kcal</span></div>
       <p class="faint" id="fd-left" style="font-size:12.5px;margin:6px 2px 0"></p></div>
+    <div class="nf-grid three">${[['p', 'Protein'], ['c', 'Carbs'], ['f', 'Fat']].map(([k, l]) => `<div><label class="eyebrow" for="fd-${k}">${l} <span class="faint">g</span></label><input class="input num" id="fd-${k}" inputmode="decimal" placeholder="—" value="${m[k] ?? ''}" style="margin-top:6px"></div>`).join('')}</div>
     <div class="field"><label class="eyebrow" for="fd-time">Time</label><input class="input num" type="time" id="fd-time" value="${m.time || ''}"></div>
     <div class="check ${m.cheat ? 'on' : ''}" data-cheat style="margin-top:18px"><span class="box">${m.cheat ? I.check : ''}</span><div><div class="t">Cheat meal</div><div class="s">Counts as overeating for the day, whatever the calories: −${rs(rules.penalty)} (only once a day).</div></div></div>
     <div class="btn-row">${meal ? `<button class="btn danger" data-fd-del style="flex:0 0 auto;width:auto;padding:16px 20px" aria-label="Delete">${I.trash}</button>` : ''}<button class="btn accent" data-fd-save>${meal ? 'Save' : 'Add food'}</button></div>`);
@@ -1150,6 +1152,7 @@ function foodSheet(d, meal) {
     const raw = ($('#fd-kcal', sh).value || '').replace(/[,\s]/g, '');
     m.kcal = Math.round(Number(raw));
     m.time = $('#fd-time', sh).value || '';
+    for (const k of ['p', 'c', 'f']) { const v = $(`#fd-${k}`, sh).value.trim().replace(',', '.'); m[k] = v === '' ? null : Math.max(0, Number(v) || 0); }
     if (!m.name) return warn('Say what you ate');
     if (raw === '' && !m.cheat) return warn('Add the calories (a guess is fine)');
     if (!Number.isFinite(m.kcal) || m.kcal < 0 || m.kcal > 10000) m.kcal = 0;
@@ -1196,13 +1199,431 @@ document.addEventListener('click', (ev) => {
   const d = el.dataset.d;
   switch (el.dataset.act) {
     case 'h-rules': rulesSheet(el.dataset.first === '1'); break;
+    case 'h-setup': profileSheet(true); break;
     case 'h-connect': connectSheet(); break;
     case 'h-shift': { const n = C.addDays(healthDay(), Number(el.dataset.n)); ui.hday = n >= today() ? null : n; ui.fresh = false; render(); break; }
     case 'h-day': openHealthDay(d); break;
     case 'h-paste': pasteSteps(d); break;
     case 'h-steps': stepsSheet(d); break;
-    case 'h-food': foodSheet(d); break;
-    case 'h-meal': { const m = state.health.days[d]?.meals.find((x) => x.id === el.dataset.id); if (m) foodSheet(d, m); break; }
+    case 'h-food': pickFood({ day: d }); break;
+    case 'h-meal': { const m = state.health.days[d]?.meals.find((x) => x.id === el.dataset.id); const fd = m?.ref && anyFood(m.ref); if (fd) amountSheet(fd, { day: d, existing: m }); else if (m) foodSheet(d, m); break; }
+  }
+});
+
+// ================================================================ food: targets, picker, scanning
+// Body & goal works out calories and macros (nutrition.js). The food picker searches the built-in list
+// (foods.js) and your own foods, meals, barcodes and label photos. Every logged item keeps its calories,
+// so the ₹1,000 overeating rule keeps working on the day's total.
+const TG = () => N.targets(state.health.profile);
+const myFoods = () => state.health.foods;
+const g1 = (x) => (x == null ? '—' : Math.round(x * 10) / 10);
+const recipeFood = (r) => {
+  const t = N.totals(r.items); const k = Math.max(1, Number(r.servings) || 1);
+  const n = {}; for (const [key] of N.NUTRIENTS) n[key] = key === 'kcal' || key === 'na' ? Math.round(t[key] / k) : Math.round((t[key] / k) * 10) / 10;
+  const grams = r.items.reduce((s, i) => s + (Number(i.g) || 0), 0);
+  return { id: `rec:${r.id}`, name: r.name, brand: '', source: 'recipe', recipeId: r.id, serving: { label: '1 serving', g: grams ? Math.round(grams / k) : null }, n, count: r.items.length };
+};
+const anyFood = (id) => (id?.startsWith('rec:') ? (() => { const r = state.health.recipes.find((x) => `rec:${x.id}` === id); return r ? recipeFood(r) : null; })() : F.foodById(id, myFoods()));
+
+/** Recently and most logged foods, as foods you can tap again. */
+function loggedFoods() {
+  const seen = new Map();
+  const days = Object.keys(state.health.days).sort().reverse();
+  let order = 0;
+  for (const d of days) for (const m of (state.health.days[d].meals || []).slice().reverse()) {
+    const key = m.ref || `quick:${m.name.toLowerCase()}|${m.kcal}`;
+    const r = seen.get(key) || { key, count: 0, order: order++, m };
+    r.count++; seen.set(key, r);
+  }
+  const toFood = (r) => (r.m.ref && anyFood(r.m.ref)) || { id: r.key, name: r.m.name, brand: '', source: 'quick', serving: { label: '1 serving', g: null }, n: { kcal: r.m.kcal, p: r.m.p ?? null, c: r.m.c ?? null, f: r.m.f ?? null, fib: r.m.fib ?? null, sug: r.m.sug ?? null, na: r.m.na ?? null } };
+  const all = [...seen.values()];
+  return { recent: all.sort((a, b) => a.order - b.order).slice(0, 8).map(toFood), most: all.slice().sort((a, b) => b.count - a.count).filter((r) => r.count > 1).slice(0, 8).map(toFood) };
+}
+
+function macroBars(t, tg, { compact = false } = {}) {
+  const bar = (label, v, goal, cls) => `<div class="mac ${cls}"><div class="top"><span>${label}</span><b class="num">${g1(v)}<small> / ${goal}g</small></b></div><div class="track"><i style="width:${goal ? Math.min(100, (v / goal) * 100).toFixed(1) : 0}%"></i></div></div>`;
+  if (!tg) return '';
+  return `<div class="macs ${compact ? 'compact' : ''}">${bar('Protein', t.p, tg.protein, 'pro')}${bar('Carbs', t.c, tg.carbs, 'carb')}${bar('Fat', t.f, tg.fat, 'fat')}</div>`;
+}
+
+function foodCard(d, day, rules, v, limit, kcalPct, meals) {
+  const tg = TG(); const t = N.totals(meals);
+  const quick = (act, icon, label) => `<button class="qa" data-act="${act}" data-d="${d}">${icon}<span>${label}</span></button>`;
+  return `<section class="card h-card">
+    <div class="head"><div class="eyebrow">${I.food} Food</div><span class="faint" style="font-size:12px">goal ${kcal(rules.calorieGoal)}</span></div>
+    <div class="kc-row"><div class="h-big num">${nf0.format(Math.max(0, rules.calorieGoal - v.kcal))}<small>kcal left</small></div><div class="eaten"><span class="eyebrow">Eaten</span><b class="num">${nf0.format(v.kcal)}</b></div></div>
+    <div class="meter ${v.overate ? 'over' : kcalPct > .85 ? 'low' : ''}" style="margin-top:12px"><i style="width:${(kcalPct * 100).toFixed(1)}%"></i></div>
+    <div class="foot">${v.cheat ? `Cheat meal logged · <b class="neg">−${rs(rules.penalty)}</b>` : v.overByCalories ? `${kcal(v.over)} over your goal · <b class="neg">−${rs(rules.penalty)}</b>` : `${kcal(Math.max(0, limit - v.kcal))} left before the ${kcal(limit)} limit`}</div>
+    ${macroBars(t, tg)}
+    ${tg ? `<button class="link" data-act="h-breakdown" data-d="${d}" style="margin-top:10px;font-size:13px">Full breakdown →</button>` : `<button class="link" data-act="h-body" style="margin-top:10px;font-size:13px">Set your body & goal for protein, carbs and fat targets →</button>`}
+    <div class="qas">${quick('h-scan', I.barcode, 'Scan')}${quick('h-label', I.camera, 'Label')}${quick('h-recipes', I.bowl, 'Meal')}${quick('h-food', I.plus, 'Food')}</div>
+    ${meals.length ? `<div class="list" style="margin-top:12px">${meals.map((m) => `<button class="row" data-act="h-meal" data-d="${d}" data-id="${m.id}"><div class="ic ${m.cheat ? 'out' : ''}">${m.cheat ? '🍕' : m.src === 'scanned' ? '▥' : m.src === 'recipe' ? '🥘' : '🍽️'}</div><div class="mid"><div class="t">${esc(m.name)}${m.cheat ? '<span class="tag warn">cheat</span>' : ''}</div><div class="s">${esc([m.amount, fmtTime(m.time), m.p != null ? `P ${g1(m.p)} · C ${g1(m.c)} · F ${g1(m.f)}` : ''].filter(Boolean).join(' · '))}</div></div><div class="amt">${kcal(m.kcal)}</div></button>`).join('')}</div>` : ''}
+  </section>`;
+}
+
+function waterCard(d) {
+  const adds = state.health.water[d] || []; const ml = adds.reduce((s, x) => s + x, 0);
+  const goal = Math.round((TG()?.water || 3) * 1000); const cups = Math.ceil(goal / 250);
+  return `<section class="card h-card">
+    <div class="head"><div class="eyebrow">${I.drop} Water</div><span class="num" style="font-size:14px">${(ml / 1000).toFixed(2)} / ${(goal / 1000).toFixed(1)} L</span></div>
+    <div class="cups">${Array.from({ length: cups }, (_, i) => `<i class="${(i + 1) * 250 <= ml ? 'on' : ''}"></i>`).join('')}</div>
+    <div class="h-btns"><button class="btn ghost" data-act="h-water" data-d="${d}" data-ml="250">+ 250 ml</button><button class="btn ghost" data-act="h-water" data-d="${d}" data-ml="500">+ 500 ml</button><button class="btn ghost" data-act="h-water" data-d="${d}" data-ml="undo" ${adds.length ? '' : 'disabled'}>Undo</button></div>
+  </section>`;
+}
+
+function weightCard() {
+  const w = state.health.weights.slice().sort((a, b) => a.date.localeCompare(b.date));
+  const last = w.at(-1); const trend = N.weightTrend(w, today());
+  const pts = w.slice(-14);
+  const lo = Math.min(...pts.map((x) => x.kg)), hi = Math.max(...pts.map((x) => x.kg));
+  const spark = pts.length > 1 ? `<svg class="wspark" viewBox="0 0 300 60" preserveAspectRatio="none"><polyline fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" points="${pts.map((x, i) => `${(i / (pts.length - 1)) * 300},${hi === lo ? 30 : 54 - ((x.kg - lo) / (hi - lo)) * 48}`).join(' ')}"/></svg>` : '';
+  return `<section class="card h-card">
+    <div class="head"><div class="eyebrow">${I.scale} Weight</div><span class="faint" style="font-size:12px">${w.length} weigh-in${w.length === 1 ? '' : 's'}</span></div>
+    ${last ? `<div class="kc-row"><div><div class="h-big num">${last.kg}<small>kg</small></div><div class="faint" style="font-size:12.5px;margin-top:2px">${esc(fmtDay(last.date))}</div></div>${trend != null ? `<div class="eaten"><span class="eyebrow">10-day avg</span><b class="num">${trend}</b></div>` : ''}</div>${spark}` : '<p class="faint" style="font-size:13.5px;margin:8px 0 0">Weigh in first thing in the morning for numbers you can compare.</p>'}
+    <div class="h-btns"><input class="input num" id="h-wkg" inputmode="decimal" placeholder="${last ? last.kg : 'kg'}" style="flex:1"><button class="btn accent" data-act="h-weigh" style="flex:0 0 auto;width:auto;padding:12px 22px">Log</button></div>
+  </section>`;
+}
+
+// ---------------------------------------------------------------- body & goal
+function profileSheet(first = false) {
+  const h = state.health;
+  const p = { sex: 'male', age: '', heightCm: '', weightKg: '', bodyFat: '', activity: 'light', goal: 'lose', pace: 0.5, ...(h.profile || {}) };
+  const lastW = h.weights.slice().sort((a, b) => a.date.localeCompare(b.date)).at(-1);
+  if (lastW && !h.profile) p.weightKg = lastW.kg;
+  const seg = (key, opts) => `<div class="seg">${opts.map(([v, l]) => `<button class="${String(p[key]) === String(v) ? 'on' : ''}" data-pp="${key}" data-v="${v}">${l}</button>`).join('')}</div>`;
+  const field = (id, label, val, unit, mode = 'decimal') => `<div><label class="eyebrow" for="${id}">${label}</label><div class="amount-box" style="margin-top:8px"><input id="${id}" class="num" inputmode="${mode}" value="${val ?? ''}" style="font-size:22px"><span class="faint" style="font-size:14px;padding-right:6px">${unit}</span></div></div>`;
+  const result = () => {
+    const tg = N.targets({ ...p, age: +p.age, heightCm: +p.heightCm, weightKg: +p.weightKg, bodyFat: +p.bodyFat || null, pace: +p.pace });
+    if (!tg) return '<p class="faint" style="margin:18px 2px 0">Fill in age, height and weight to see your numbers.</p>';
+    const b = N.bmi({ heightCm: +p.heightCm, weightKg: +p.weightKg }); const bl = N.bmiLabel(b, +p.age);
+    return `<div class="card hero" style="margin-top:18px">
+      <div class="kc-row"><div><div class="eyebrow">Daily target</div><div class="h-big num">${nf0.format(tg.target)}<small>kcal</small></div></div><div class="eaten"><span class="eyebrow">Maintenance</span><b class="num">${nf0.format(tg.maintenance)}</b></div></div>
+      <div class="tg-grid"><div><span>Protein</span><b class="num">${tg.protein} g</b></div><div><span>Carbs</span><b class="num">${tg.carbs} g</b></div><div><span>Fat</span><b class="num">${tg.fat} g</b></div><div><span>Fibre</span><b class="num">${tg.fibre} g</b></div><div><span>Sugar max</span><b class="num">${tg.sugarMax} g</b></div><div><span>Water</span><b class="num">${tg.water} L</b></div></div>
+      <div class="divider"></div>
+      <div class="line-item" style="padding:0"><div class="grow"><div class="t">BMI ${b}</div><div class="s">${bl ? bl : 'Under 18 BMI is read on a growth chart for your age, so there’s no adult label.'}${+p.bodyFat ? ` · ${p.bodyFat}% body fat says more than BMI.` : ''}</div></div></div>
+      <div class="notes">${tg.notes.map((n) => `<div class="note ${n.warn ? 'warn' : ''}"><b>${esc(n.t)}</b><span>${esc(n.s)}</span></div>`).join('')}</div>
+    </div>`;
+  };
+  const body = () => `
+    ${first ? '<p class="lead" style="margin-top:0">Tell Ledger about you. It works out your calories, protein, carbs, fat and water, and your calorie target becomes the limit for the overeating rule.</p>' : ''}
+    <div class="eyebrow label">Sex</div>${seg('sex', [['male', 'Male'], ['female', 'Female']])}
+    <div class="opts" style="margin-top:16px">${field('pp-age', 'Age', p.age, 'years', 'numeric')}${field('pp-h', 'Height', p.heightCm, 'cm')}</div>
+    <div class="opts" style="margin-top:12px">${field('pp-w', 'Weight', p.weightKg, 'kg')}${field('pp-bf', 'Body fat (optional)', p.bodyFat, '%')}</div>
+    <div class="field"><div class="eyebrow label">How active</div><div class="opts" style="grid-template-columns:1fr;display:grid">${Object.entries(N.ACTIVITY).map(([k, a]) => `<button class="opt ${p.activity === k ? 'on' : ''}" data-pp="activity" data-v="${k}" style="text-align:left;text-transform:none;letter-spacing:0;font-size:14px;padding:12px 14px"><b>${a.label}</b><br><span style="opacity:.7;font-weight:500">${a.sub}</span></button>`).join('')}</div></div>
+    <div class="field"><div class="eyebrow label">Goal</div>${seg('goal', Object.entries(N.GOALS))}</div>
+    ${p.goal !== 'maintain' ? `<div class="field"><div class="eyebrow label">Pace</div>${seg('pace', (p.goal === 'gain' ? [0.25, 0.5] : [0.25, 0.5, 0.75, 1]).map((x) => [x, `${x} kg/wk`]))}</div>` : ''}
+    <div id="pp-res">${result()}</div>
+    <div class="btn-row"><button class="btn accent" data-pp-save>${first ? 'Use these targets' : 'Save'}</button></div>`;
+  const sh = openSheet(first ? 'Your body & goal' : 'Body & goal', body());
+  const el = $('.sheet-body', sh);
+  const pull = () => { p.age = $('#pp-age', sh).value.trim(); p.heightCm = $('#pp-h', sh).value.trim(); p.weightKg = $('#pp-w', sh).value.trim(); p.bodyFat = $('#pp-bf', sh).value.trim(); };
+  sh.addEventListener('input', () => { pull(); $('#pp-res', sh).innerHTML = result(); });
+  sh.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-pp]');
+    if (b) { pull(); p[b.dataset.pp] = b.dataset.pp === 'pace' ? Number(b.dataset.v) : b.dataset.v; if (b.dataset.pp === 'goal' && p.goal === 'gain' && p.pace > 0.5) p.pace = 0.25; const y = sh.scrollTop; el.innerHTML = body(); sh.scrollTop = y; return; }
+    if (!ev.target.closest('[data-pp-save]')) return;
+    pull();
+    const prof = { sex: p.sex, age: Math.round(+p.age), heightCm: +p.heightCm, weightKg: +p.weightKg, bodyFat: +p.bodyFat || null, activity: p.activity, goal: p.goal, pace: +p.pace };
+    if (!(prof.age >= 10 && prof.age <= 100)) return warn('Enter your age');
+    if (!(prof.heightCm >= 100 && prof.heightCm <= 250)) return warn('Height in cm, like 170');
+    if (!(prof.weightKg >= 25 && prof.weightKg <= 300)) return warn('Weight in kg, like 70');
+    h.profile = prof;
+    const t = today(); const ex = h.weights.find((w) => w.date === t);
+    if (!lastW || lastW.kg !== prof.weightKg) { if (ex) ex.kg = prof.weightKg; else h.weights.push({ date: t, kg: prof.weightKg }); }
+    const tg = TG();
+    if (h.autoGoal !== false && tg) { h.calorieGoal = tg.target; if (h.days[t]) delete h.days[t].rules; }
+    closeSheet();
+    if (first) { S.save(state); render(); setTimeout(() => rulesSheet(true), 350); }
+    else healthCommit(`Targets updated · ${kcal(h.calorieGoal)} a day`);
+  });
+}
+
+// ---------------------------------------------------------------- picker
+/** Search and pick a food. mode 'log' adds it to the day; mode 'build' hands it to a meal being made. */
+function pickFood({ day, mode = 'log', onPick } = {}) {
+  let q = '', brand = null;
+  const lf = loggedFoods();
+  const row = (f) => `<button class="row" data-pick-food="${esc(f.id)}"><div class="ic">${f.source === 'recipe' ? '🥘' : f.source === 'scanned' ? '▥' : f.source === 'label' ? '📷' : f.source === 'hand' ? '✎' : '🍽️'}</div><div class="mid"><div class="t">${esc(f.name)}</div><div class="s">${esc([f.brand, f.serving?.label, f.count ? `${f.count} items` : ''].filter(Boolean).join(' · '))}</div></div><div class="amt">${f.n?.kcal != null ? kcal(f.n.kcal) : ''}</div></button>`;
+  const pool = new Map();
+  const list = (title, foods, extra = '') => { foods.forEach((f) => pool.set(f.id, f)); return foods.length ? `<div class="section-head"><h2>${title}</h2>${extra}</div><div class="list">${foods.map(row).join('')}</div>` : ''; };
+  const content = () => {
+    pool.clear();
+    if (q || brand) {
+      const res = F.searchFoods(q, [...myFoods(), ...state.health.recipes.map(recipeFood)], { brandGroup: brand, limit: 60 });
+      res.forEach((f) => pool.set(f.id, f));
+      return `${brand ? `<div class="chips" style="margin-top:12px"><button class="chip on" data-brand="">${esc(brand === 'Mine' ? 'Your foods' : brand)} ✕</button></div>` : ''}
+        ${res.length ? `<div class="list" style="margin-top:12px">${res.map(row).join('')}</div>` : `<div class="empty"><b>Nothing called “${esc(q)}”</b>Scan its barcode, read the label, or add it by hand.</div>`}
+        <div class="h-btns"><button class="btn ghost" data-fp="create">${I.edit} Add “${esc(q || 'a food')}” by hand</button></div>`;
+    }
+    const recipes = state.health.recipes.map(recipeFood);
+    return `${list('Your meals', recipes, '<button class="link" data-fp="new-meal">+ New meal</button>')}
+      ${!recipes.length && mode === 'log' ? '<div class="section-head"><h2>Your meals</h2><button class="link" data-fp="new-meal">+ New meal</button></div><p class="faint" style="font-size:13px;margin:0 4px">Save dishes you make often, like your fried rice, and log them in one tap.</p>' : ''}
+      ${list('Recent', lf.recent)}${list('Most eaten', lf.most)}
+      ${list('Your foods', myFoods().slice(-8).reverse())}
+      <div class="section-head"><h2>Browse</h2></div>
+      <div class="chips wrap">${['Indian', 'Quick foods', 'Drinks', 'Basics', ...F.BRAND_GROUPS.filter((b) => !['Indian', 'Quick foods', 'Drinks', 'Basics'].includes(b)), ...(myFoods().length ? ['Mine'] : [])].map((b) => `<button class="chip" data-brand="${esc(b)}">${esc(b === 'Mine' ? 'Your foods' : b)}</button>`).join('')}</div>
+      <p class="faint" style="font-size:12px;margin:14px 4px 0">${F.FOODS.length} foods built in. Restaurant and home values are good estimates. Scan or read the label for exact numbers on packets.</p>`;
+  };
+  const sh = openSheet(mode === 'build' ? 'Add to meal' : `Add food · ${fmtDay(day)}`, `
+    <div class="search-box">${I.search}<input id="fp-q" placeholder="Search: dal tadka, Maggi, Farmhouse…" autocomplete="off" autocapitalize="off"></div>
+    ${mode === 'log' ? `<div class="qas" style="margin-top:12px"><button class="qa" data-fp="scan">${I.barcode}<span>Scan</span></button><button class="qa" data-fp="label">${I.camera}<span>Label</span></button><button class="qa" data-fp="create">${I.edit}<span>By hand</span></button><button class="qa" data-fp="quick">${I.bolt}<span>Quick</span></button></div>` : ''}
+    <div id="fp-res">${content()}</div>`);
+  const inp = $('#fp-q', sh), out = $('#fp-res', sh);
+  if (FINE) setTimeout(() => inp.focus(), 300);
+  inp.addEventListener('input', () => { q = inp.value.trim(); out.innerHTML = content(); });
+  const done = (food) => amountSheet(food, { day, mode, onPick });
+  sh.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-brand]');
+    if (b) { brand = b.dataset.brand || null; out.innerHTML = content(); sh.scrollTop = 0; return; }
+    const pf = ev.target.closest('[data-pick-food]');
+    if (pf) { const f = pool.get(pf.dataset.pickFood); if (f) done(f); return; }
+    const a = ev.target.closest('[data-fp]')?.dataset.fp;
+    if (a === 'scan') scanSheet(day);
+    else if (a === 'label') labelFlow(day, { mode, onPick });
+    else if (a === 'create') createFoodSheet({ name: q }, { onSaved: done });
+    else if (a === 'quick') foodSheet(day);
+    else if (a === 'new-meal') recipeSheet();
+  });
+  return sh;
+}
+
+// ---------------------------------------------------------------- amount
+function amountSheet(food, { day, mode = 'log', onPick, existing } = {}) {
+  const perGram = !!food.serving?.g;
+  const startG = existing ? (existing.servings != null ? null : existing.g ?? null) : (['scanned', 'label'].includes(food.source) ? food.usualG || food.serving.g : null);
+  const a = { useG: perGram && startG != null, g: startG ?? food.serving?.g ?? 100, servings: existing?.servings ?? 1, cheat: !!existing?.cheat, time: existing?.time || (day === today() ? nowTime() : '13:00') };
+  const unit = food.unit || 'g';
+  const amount = () => (a.useG ? { g: a.g } : { servings: a.servings });
+  const preview = () => {
+    const n = N.scale(food, amount());
+    return `<div class="amt-hero"><div class="h-big num">${nf0.format(n.kcal || 0)}<small>kcal</small></div><div class="s faint">${esc(N.amountLabel(food, amount()))}</div></div>
+      <div class="tg-grid">${N.NUTRIENTS.slice(1).map(([k, l, u]) => `<div><span>${l}</span><b class="num">${n[k] == null ? '—' : `${n[k]} ${u}`}</b></div>`).join('')}</div>`;
+  };
+  const body = () => `
+    <div class="row" style="cursor:default"><div class="ic">${food.source === 'recipe' ? '🥘' : '🍽️'}</div><div class="mid"><div class="t">${esc(food.name)}</div><div class="s">${esc([food.brand, food.serving?.label && `per ${food.serving.label}${food.serving.g ? ` (${food.serving.g} ${unit})` : ''}`].filter(Boolean).join(' · '))}</div></div></div>
+    ${perGram ? `<div class="seg" style="margin-top:16px"><button class="${!a.useG ? 'on' : ''}" data-am="serv">Servings</button><button class="${a.useG ? 'on' : ''}" data-am="g">${unit === 'ml' ? 'Millilitres' : 'Grams'}</button></div>` : ''}
+    ${a.useG ? `<div class="field"><label class="eyebrow" for="am-g">How much did you eat?</label><div class="amount-box"><input id="am-g" class="num" inputmode="decimal" value="${a.g}" style="font-size:26px"><span class="faint" style="font-size:15px;padding-right:6px">${unit}</span></div></div>`
+      : `<div class="field"><div class="eyebrow label">How many</div><div class="opts three">${[0.25, 0.5, 1, 1.5, 2, 3].map((x) => `<button class="opt ${a.servings === x ? 'on' : ''}" data-sv="${x}">${{ 0.25: '¼', 0.5: '½', 1.5: '1½' }[x] || x}</button>`).join('')}</div>
+        <div class="amount-box" style="margin-top:10px"><input id="am-s" class="num" inputmode="decimal" value="${a.servings}" style="font-size:22px"><span class="faint" style="font-size:14px;padding-right:6px">× ${esc(food.serving?.label || 'serving')}</span></div></div>`}
+    <div id="am-prev">${preview()}</div>
+    ${mode === 'log' ? `<div class="field"><label class="eyebrow" for="am-t">Time</label><input class="input num" type="time" id="am-t" value="${a.time}"></div>
+      <div class="check ${a.cheat ? 'on' : ''}" data-am-cheat style="margin-top:16px"><span class="box">${a.cheat ? I.check : ''}</span><div><div class="t">Cheat meal</div><div class="s">Counts as overeating for the day whatever the calories: −${rs(state.health.penalty)}, once a day at most.</div></div></div>` : ''}
+    <div class="btn-row">${existing ? `<button class="btn danger" data-am-del style="flex:0 0 auto;width:auto;padding:16px 20px" aria-label="Delete">${I.trash}</button>` : ''}<button class="btn accent" data-am-ok>${existing ? 'Save' : mode === 'build' ? 'Add to meal' : 'Add food'}</button></div>`;
+  const sh = openSheet(existing ? 'Edit food' : 'How much?', body());
+  const el = $('.sheet-body', sh);
+  const pull = () => {
+    const gi = $('#am-g', sh), si = $('#am-s', sh), ti = $('#am-t', sh);
+    if (gi) a.g = Math.max(0, Number(gi.value.replace(',', '.')) || 0);
+    if (si) a.servings = Math.max(0, Number(si.value.replace(',', '.')) || 0);
+    if (ti) a.time = ti.value;
+  };
+  const redraw = () => { const y = sh.scrollTop; el.innerHTML = body(); sh.scrollTop = y; };
+  sh.addEventListener('input', () => { pull(); $('#am-prev', sh).innerHTML = preview(); });
+  sh.addEventListener('click', (ev) => {
+    const m = ev.target.closest('[data-am]'); if (m) { pull(); a.useG = m.dataset.am === 'g'; return redraw(); }
+    const sv = ev.target.closest('[data-sv]'); if (sv) { a.servings = Number(sv.dataset.sv); return redraw(); }
+    const ch = ev.target.closest('[data-am-cheat]'); if (ch) { a.cheat = !a.cheat; ch.classList.toggle('on', a.cheat); $('.box', ch).innerHTML = a.cheat ? I.check : ''; return; }
+    if (ev.target.closest('[data-am-del]')) {
+      const rec = dayRec(day); rec.meals = rec.meals.filter((x) => x.id !== existing.id);
+      closeSheet(); X.play('delete'); return healthCommit(`${existing.name} removed`);
+    }
+    if (!ev.target.closest('[data-am-ok]')) return;
+    pull();
+    if (a.useG ? !(a.g > 0) : !(a.servings > 0)) return warn('How much did you have?');
+    const amt = amount(); const n = N.scale(food, amt);
+    const item = { name: food.brand && !food.name.includes(food.brand) ? `${food.name} · ${food.brand}` : food.name, ref: food.id, src: food.source, amount: N.amountLabel(food, amt), ...amt, ...n, kcal: n.kcal || 0 };
+    if (a.useG) item.g = a.g; else if (food.serving?.g) item.g = Math.round(food.serving.g * a.servings);
+    if (mode === 'build') { closeSheet(); closeSheet(); onPick?.(item); return; }
+    const rec = dayRec(day);
+    if (existing) Object.assign(rec.meals.find((x) => x.id === existing.id), item, { time: a.time, cheat: a.cheat });
+    else rec.meals.push({ ...item, id: S.uid(), time: a.time, cheat: a.cheat });
+    closeAllSheets();
+    if (!existing && day !== healthDay()) ui.hday = day;
+    healthCommit(existing ? 'Saved' : `${food.name} · ${kcal(item.kcal)} added`);
+  });
+}
+
+// ---------------------------------------------------------------- your own foods
+function createFoodSheet(pre = {}, { onSaved, note } = {}) {
+  const f = { name: pre.name || '', brand: pre.brand || '', per: pre.per || '100', servingG: pre.servingG || '', barcode: pre.barcode || '', source: pre.source || 'hand', n: { ...(pre.n || {}) } };
+  const nf = ([k, l, u]) => `<div><label class="eyebrow" for="cf-${k}">${l}</label><div class="amount-box" style="margin-top:6px"><input id="cf-${k}" class="num" inputmode="decimal" value="${f.n[k] ?? ''}" placeholder="—" style="font-size:19px"><span class="faint" style="font-size:13px;padding-right:6px">${u}</span></div></div>`;
+  const sh = openSheet(pre.barcode ? 'Add this product' : 'Add a food', `
+    ${note ? `<p class="lead" style="margin-top:0">${note}</p>` : ''}
+    <div class="field" style="margin-top:0"><label class="eyebrow" for="cf-name">Name</label><input class="input" id="cf-name" value="${esc(f.name)}" placeholder="Paneer wrap from canteen"></div>
+    <div class="field"><label class="eyebrow" for="cf-brand">Brand <span class="faint">— optional</span></label><input class="input" id="cf-brand" value="${esc(f.brand)}"></div>
+    <div class="field"><div class="eyebrow label">The numbers are per</div><div class="seg"><button class="${f.per === '100' ? 'on' : ''}" data-per="100">100 g / ml</button><button class="${f.per === 'serving' ? 'on' : ''}" data-per="serving">1 serving</button></div>
+      <div class="amount-box" id="cf-sbox" style="margin-top:10px;${f.per === 'serving' ? '' : 'display:none'}"><input id="cf-sg" class="num" inputmode="decimal" value="${f.servingG}" placeholder="Serving size" style="font-size:19px"><span class="faint" style="font-size:13px;padding-right:6px">g in a serving</span></div></div>
+    <div class="nf-grid">${N.NUTRIENTS.map(nf).join('')}</div>
+    ${pre.barcode ? `<p class="faint" style="font-size:12.5px;margin:12px 2px 0">Barcode ${esc(pre.barcode)}. Next time you scan it, it's found straight away.</p>` : ''}
+    <div class="btn-row">${!pre.fromLabel ? `<button class="btn ghost" data-cf-label style="flex:0 0 auto;width:auto;padding:16px 16px">${I.camera} Read label</button>` : ''}<button class="btn accent" data-cf-save>Save food</button></div>`);
+  if (FINE && !f.name) setTimeout(() => $('#cf-name', sh)?.focus(), 300);
+  sh.addEventListener('click', async (ev) => {
+    const p = ev.target.closest('[data-per]');
+    if (p) { f.per = p.dataset.per; $$('[data-per]', sh).forEach((b) => b.classList.toggle('on', b === p)); $('#cf-sbox', sh).style.display = f.per === 'serving' ? '' : 'none'; return; }
+    if (ev.target.closest('[data-cf-label]')) {
+      const file = await SC.pickPhoto(); if (!file) return;
+      const res = await runOCR(file); if (!res) return;
+      for (const [k] of N.NUTRIENTS) { const v = res.n[k]; if (v != null) $(`#cf-${k}`, sh).value = v; }
+      f.per = res.per100 || !res.servingG ? '100' : 'serving'; if (res.servingG) $('#cf-sg', sh).value = res.servingG;
+      $$('[data-per]', sh).forEach((b) => b.classList.toggle('on', b.dataset.per === f.per)); $('#cf-sbox', sh).style.display = f.per === 'serving' ? '' : 'none';
+      toast(`Read ${res.found} values. Check them against the label.`); return;
+    }
+    if (!ev.target.closest('[data-cf-save]')) return;
+    const name = $('#cf-name', sh).value.trim(); if (!name) return warn('Give it a name');
+    const n = {}; for (const [k] of N.NUTRIENTS) { const raw = $(`#cf-${k}`, sh).value.trim().replace(',', '.'); n[k] = raw === '' ? null : Number(raw); if (n[k] != null && !(n[k] >= 0)) return warn('Check the numbers'); }
+    if (n.kcal == null) return warn('Calories are needed');
+    const sg = Number($('#cf-sg', sh).value) || null;
+    if (f.per === 'serving' && !sg) return warn('How many grams in a serving?');
+    const food = { id: `my:${S.uid()}`, name, brand: $('#cf-brand', sh).value.trim(), source: f.source, barcode: f.barcode || undefined, serving: f.per === '100' ? { label: '100 g', g: 100 } : { label: `1 serving (${sg} g)`, g: sg }, n, usualG: pre.usualG || (f.per === 'serving' ? sg : null) };
+    const h = state.health;
+    if (food.barcode) h.foods = h.foods.filter((x) => x.barcode !== food.barcode);
+    h.foods.push(food); S.save(state);
+    closeSheet(); toast(`${name} saved to your foods`);
+    onSaved?.(food);
+  });
+}
+
+async function runOCR(file) {
+  const sh = openSheet('Reading the label…', `<p class="lead" style="margin-top:0" id="ocr-msg">Getting the reader ready. The first time takes a little longer.</p><div class="meter"><i id="ocr-bar" style="width:4%"></i></div>`);
+  try {
+    const text = await SC.readLabel(file, (p) => { const b = $('#ocr-bar', sh); if (b) { b.style.width = `${Math.max(4, p * 100)}%`; $('#ocr-msg', sh).textContent = 'Reading the numbers…'; } });
+    if (sheetStack.at(-1)?.sh === sh) closeSheet();
+    const res = N.parseLabel(text);
+    if (!res.found) { warn('Couldn’t read the numbers. Try a sharper, straight-on photo of the table.'); return null; }
+    return res;
+  } catch (e) { if (sheetStack.at(-1)?.sh === sh) closeSheet(); warn(e.message || 'Couldn’t read the label'); return null; }
+}
+
+async function labelFlow(day, { mode = 'log', onPick } = {}) {
+  const file = await SC.pickPhoto(); if (!file) return;
+  const res = await runOCR(file); if (!res) return;
+  createFoodSheet({ n: res.n, per: res.per100 || !res.servingG ? '100' : 'serving', servingG: res.servingG, source: 'label', fromLabel: true }, {
+    note: `Read ${res.found} of 7 values from the photo. Check each one against the label, fix any misreads, and name it.`,
+    onSaved: (food) => amountSheet(food, { day, mode, onPick }),
+  });
+}
+
+// ---------------------------------------------------------------- barcode
+function scanSheet(day) {
+  let stop = null;
+  const sh = openSheet('Scan a barcode', `
+    <div class="scan-box"><video id="sc-v" playsinline muted autoplay></video><i class="aim"></i></div>
+    <p class="faint" id="sc-msg" style="text-align:center;font-size:13.5px;margin:10px 0 0">Starting the camera…</p>
+    <div class="h-btns"><button class="btn ghost" data-sc-photo>${I.camera} Photo of barcode</button></div>
+    <div class="field"><label class="eyebrow" for="sc-num">Or type the number</label><div class="opts"><input class="input num" id="sc-num" inputmode="numeric" placeholder="8901058000290" style="flex:1"><button class="btn accent" data-sc-go style="flex:0 0 auto;width:auto;padding:12px 18px">Look up</button></div></div>
+    <p class="faint" style="font-size:12px;margin:14px 2px 0">Looks the barcode up in Open Food Facts, a free public food database. Only the barcode number is sent.</p>`);
+  const msg = (t) => { const m = $('#sc-msg', sh); if (m) m.textContent = t; };
+  sheetStack.at(-1).onClose = () => stop?.();
+  const found = async (code) => {
+    stop?.(); stop = null; X.play('success'); msg(`Found ${code}. Looking it up…`);
+    const mine = myFoods().find((f) => f.barcode === code);
+    if (mine) { closeSheet(); return amountSheet(mine, { day }); }
+    try {
+      const prod = await SC.lookupBarcode(code);
+      const food = N.offToFood(code, prod);
+      closeSheet();
+      if (food) {
+        food.id = `my:${S.uid()}`; state.health.foods.push(food); S.save(state);
+        toast(`${food.name}${food.brand ? ` · ${food.brand}` : ''}`);
+        return amountSheet(food, { day });
+      }
+      createFoodSheet({ name: prod?.product_name || '', brand: (prod?.brands || '').split(',')[0], barcode: code, source: 'scanned' }, { note: prod ? 'This product is listed but has no nutrition numbers. Read the label to fill them in.' : 'This barcode isn’t in the database yet. Read the label once and it’s saved for next time.', onSaved: (f) => amountSheet(f, { day }) });
+    } catch (e) { msg(e.message || 'Lookup failed. Check your connection.'); }
+  };
+  SC.startBarcode($('#sc-v', sh), found).then((s) => { stop = s; if (!sheetStack.some((r) => r.sh === sh)) s(); else msg('Point the camera at the barcode'); })
+    .catch((e) => msg(e.name === 'NotAllowedError' ? 'Camera access is off. Allow it in Settings → Safari → Camera, or type the number.' : (e.message || 'The camera isn’t available here. Take a photo or type the number.')));
+  sh.addEventListener('click', async (ev) => {
+    if (ev.target.closest('[data-sc-photo]')) {
+      const file = await SC.pickPhoto(); if (!file) return;
+      msg('Reading the photo…');
+      const code = await SC.barcodeFromPhoto(file);
+      if (code) found(code); else msg('No barcode found in that photo. Get closer, with the lines sharp.');
+    }
+    if (ev.target.closest('[data-sc-go]')) {
+      const code = $('#sc-num', sh).value.replace(/\D/g, '');
+      if (code.length < 8) return warn('Barcodes have 8 to 14 digits');
+      found(code);
+    }
+  });
+}
+
+// ---------------------------------------------------------------- meals you make
+function recipesSheet(day) {
+  const rs_ = state.health.recipes;
+  const sh = openSheet('Your meals', `
+    ${rs_.length ? `<div class="list">${rs_.map((r) => { const f = recipeFood(r); return `<div class="row" style="cursor:default"><div class="ic">🥘</div><div class="mid"><div class="t">${esc(r.name)}</div><div class="s">${kcal(f.n.kcal)} a serving · ${r.items.length} items${r.servings > 1 ? ` · makes ${r.servings}` : ''}</div></div><button class="btn sm ghost" data-rc-edit="${r.id}">Edit</button><button class="btn sm accent" data-rc-log="${r.id}">Log</button></div>`; }).join('')}</div>`
+      : '<p class="lead" style="margin-top:0">Build a dish once from its ingredients, like fried rice with rice, oil, egg and veg, and log it in one tap after that.</p>'}
+    <div class="btn-row"><button class="btn accent" data-rc-new>+ New meal</button></div>`);
+  sh.addEventListener('click', (ev) => {
+    const l = ev.target.closest('[data-rc-log]'), e = ev.target.closest('[data-rc-edit]');
+    if (l) { const r = rs_.find((x) => x.id === l.dataset.rcLog); amountSheet(recipeFood(r), { day }); }
+    if (e) { closeSheet(); recipeSheet(rs_.find((x) => x.id === e.dataset.rcEdit)); }
+    if (ev.target.closest('[data-rc-new]')) { closeSheet(); recipeSheet(); }
+  });
+}
+
+function recipeSheet(existing) {
+  const r = existing ? JSON.parse(JSON.stringify(existing)) : { id: S.uid(), name: '', servings: 1, items: [] };
+  const body = () => {
+    const t = N.totals(r.items); const k = Math.max(1, Number(r.servings) || 1);
+    return `<div class="field" style="margin-top:0"><label class="eyebrow" for="rc-name">Name</label><input class="input" id="rc-name" value="${esc(r.name)}" placeholder="Fried rice, protein shake…"></div>
+      <div class="field"><label class="eyebrow" for="rc-k">Makes</label><div class="amount-box"><input id="rc-k" class="num" inputmode="numeric" value="${r.servings}" style="font-size:20px"><span class="faint" style="font-size:14px;padding-right:6px">serving${k === 1 ? '' : 's'}</span></div></div>
+      <div class="section-head"><h2>Ingredients</h2><button class="link" data-rc-add>+ Add</button></div>
+      ${r.items.length ? `<div class="list">${r.items.map((it, i) => `<div class="row" style="cursor:default"><div class="mid"><div class="t">${esc(it.name)}</div><div class="s">${esc(it.amount || '')}</div></div><div class="amt">${kcal(it.kcal)}</div><button class="btn sm danger" data-rc-rm="${i}" aria-label="Remove">${I.trash}</button></div>`).join('')}</div>` : '<p class="faint" style="font-size:13.5px;margin:0 4px">Add each ingredient with how much went in.</p>'}
+      ${r.items.length ? `<div class="card" style="margin-top:12px"><div class="kc-row"><div><div class="eyebrow">Per serving</div><div class="h-big num">${nf0.format(Math.round(t.kcal / k))}<small>kcal</small></div></div><div class="eaten"><span class="eyebrow">Whole dish</span><b class="num">${nf0.format(t.kcal)}</b></div></div><p class="faint" style="font-size:13px;margin:8px 0 0">P ${g1(t.p / k)} g · C ${g1(t.c / k)} g · F ${g1(t.f / k)} g a serving</p></div>` : ''}
+      <div class="btn-row">${existing ? `<button class="btn danger" data-rc-del style="flex:0 0 auto;width:auto;padding:16px 20px" aria-label="Delete">${I.trash}</button>` : ''}<button class="btn accent" data-rc-save>Save meal</button></div>`;
+  };
+  const sh = openSheet(existing ? 'Edit meal' : 'New meal', body());
+  const el = $('.sheet-body', sh);
+  const pull = () => { r.name = $('#rc-name', sh).value.trim(); r.servings = Math.max(1, Math.round(Number($('#rc-k', sh).value) || 1)); };
+  sh.addEventListener('click', async (ev) => {
+    if (ev.target.closest('[data-rc-add]')) { pull(); pickFood({ mode: 'build', onPick: (item) => { r.items.push(item); el.innerHTML = body(); } }); return; }
+    const rm = ev.target.closest('[data-rc-rm]'); if (rm) { pull(); r.items.splice(Number(rm.dataset.rcRm), 1); el.innerHTML = body(); return; }
+    if (ev.target.closest('[data-rc-del]')) { if (await ask('Delete this meal?', 'Days you already logged it keep their calories.', 'Delete', true)) { state.health.recipes = state.health.recipes.filter((x) => x.id !== r.id); S.save(state); closeSheet(); toast('Meal deleted'); render(); } return; }
+    if (!ev.target.closest('[data-rc-save]')) return;
+    pull();
+    if (!r.name) return warn('Name the meal');
+    if (!r.items.length) return warn('Add at least one ingredient');
+    const list = state.health.recipes; const i = list.findIndex((x) => x.id === r.id);
+    if (i >= 0) list[i] = r; else list.push(r);
+    S.save(state); closeSheet(); toast(`${r.name} saved`); render();
+  });
+}
+
+function breakdownSheet(d) {
+  const meals = state.health.days[d]?.meals || []; const t = N.totals(meals); const tg = TG();
+  const goal = { kcal: state.health.calorieGoal, p: tg?.protein, c: tg?.carbs, f: tg?.fat, fib: tg?.fibre, sug: tg?.sugarMax, na: tg?.sodiumMax };
+  const missing = meals.filter((m) => m.p == null).length;
+  openSheet(`Breakdown · ${fmtDay(d)}`, `
+    <div class="card" style="padding:4px 18px">${N.NUTRIENTS.map(([k, l, u]) => { const cap = k === 'sug' || k === 'na'; const over = goal[k] && t[k] > goal[k]; return `<div class="line-item"><div class="grow"><div class="t">${l}</div><div class="track" style="margin-top:8px"><i style="width:${goal[k] ? Math.min(100, (t[k] / goal[k]) * 100) : 0}%;${over && cap ? 'background:var(--accent)' : ''}"></i></div></div><div class="num" style="font-weight:650;text-align:right;min-width:96px">${g1(t[k])} <span class="faint" style="font-weight:500">/ ${goal[k] ?? '—'}${cap ? ' max' : ''} ${u}</span></div></div>`; }).join('')}</div>
+    ${missing ? `<p class="faint" style="font-size:12.5px;margin:10px 2px 0">${missing} item${missing === 1 ? ' was' : 's were'} added with calories only, so macros are a little under.</p>` : ''}
+    <div class="btn-row"><button class="btn accent" data-act="close-sheet">Done</button></div>`);
+}
+
+document.addEventListener('click', (ev) => {
+  const el = ev.target.closest('[data-act^="h-"]');
+  if (!el) return;
+  const d = el.dataset.d || healthDay();
+  switch (el.dataset.act) {
+    case 'h-body': profileSheet(); break;
+    case 'h-scan': scanSheet(d); break;
+    case 'h-label': labelFlow(d); break;
+    case 'h-recipes': recipesSheet(d); break;
+    case 'h-breakdown': breakdownSheet(d); break;
+    case 'h-water': {
+      const w = state.health.water; const list = (w[d] ||= []);
+      if (el.dataset.ml === 'undo') list.pop(); else list.push(Number(el.dataset.ml));
+      S.save(state); render(); break;
+    }
+    case 'h-weigh': {
+      const kg = Number(($('#h-wkg')?.value || '').replace(',', '.'));
+      if (!(kg >= 25 && kg <= 300)) { warn('Enter your weight in kg'); break; }
+      const h = state.health; const t = today(); const ex = h.weights.find((x) => x.date === t);
+      if (ex) ex.kg = kg; else h.weights.push({ date: t, kg });
+      if (h.profile) { h.profile.weightKg = kg; const tg = TG(); if (h.autoGoal !== false && tg) { h.calorieGoal = tg.target; if (h.days[t]) delete h.days[t].rules; } }
+      healthCommit(`${kg} kg logged${h.profile ? ` · target ${kcal(h.calorieGoal)}` : ''}`);
+      break;
+    }
   }
 });
 
@@ -1267,7 +1688,7 @@ document.addEventListener('click', async (ev) => {
     case 'goto-ledger': ui.tab = 'ledger'; ui.period = 'month'; ui.filter = el.dataset.filter; history.replaceState(null, '', '#ledger'); render(); window.scrollTo({ top: 0 }); break;
     case 'period': ui.period = el.dataset.v; render(); break;
     case 'filter': ui.filter = el.dataset.v; render(); break;
-    case 'new-entry': if (ui.tab === 'health' && state.health.enabled) foodSheet(healthDay()); else entrySheet(null); break;
+    case 'new-entry': if (ui.tab === 'health' && state.health.enabled) pickFood({ day: healthDay() }); else entrySheet(null); break;
     case 'open-entry': { const e = byId(state.entries, el.dataset.id); if (e?.health) { closeAllSheets(); openHealthDay(e.health.day); } else if (e) { if (inSheet) closeAllSheets(); entrySheet(e); } break; }
     case 'calc': openCalc(); break;
     case 'search': openSearch(); break;
