@@ -4,7 +4,7 @@ import { defaultHealth } from './health.js';
 
 const KEY = 'ledger.v1';
 const SNAP_KEY = 'ledger.snapshots';
-export const VERSION = '1.5.0';
+export const VERSION = '1.6.0';
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 

@@ -722,7 +722,6 @@ textarea.input { min-height: 88px; resize: vertical; font: 14px/1.4 ui-monospace
 .wspark { width: 100%; height: 54px; margin-top: 10px; color: var(--accent); }
 
 /* ---------- v1.5 launcher: three apps ---------- */
-.view.no-tabs { padding-bottom: 40px; }
 .brand.with-back { display: flex; align-items: center; gap: 10px; }
 .brand.with-back .back { flex: 0 0 auto; }
 .brand.with-back p { white-space: nowrap; }
@@ -730,17 +729,93 @@ textarea.input { min-height: 88px; resize: vertical; font: 14px/1.4 ui-monospace
 .apps-hello { margin: 6px 4px 18px; }
 .apps-hello h2 { font: 750 28px/1.15 var(--display); margin: 6px 0 0; letter-spacing: -.01em; }
 .app-cards { display: grid; gap: 14px; }
-.app-card { display: flex; align-items: center; gap: 16px; width: 100%; text-align: left; padding: 22px 18px; border-radius: 26px; color: var(--ink);
-  background: var(--g-bg, var(--surface-2)); border: 1px solid var(--line, rgba(255,255,255,.08)); backdrop-filter: blur(22px) saturate(1.4); -webkit-backdrop-filter: blur(22px) saturate(1.4); box-shadow: var(--g-hi, none), 0 10px 30px rgba(0,0,0,.18); }
-.app-card:active { transform: scale(.97); }
-.app-card .app-ic { width: 54px; height: 54px; flex: 0 0 54px; border-radius: 18px; display: grid; place-items: center; }
-.app-card .app-ic svg { width: 26px; height: 26px; }
-.app-card .app-mid { flex: 1; min-width: 0; }
-.app-card .app-name { font-size: 12px; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); display: flex; align-items: center; gap: 8px; }
-.app-card .app-big { font: 750 26px/1.15 var(--display); margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.app-card .app-big small { font-size: 14px; font-weight: 600; color: var(--ink-3); }
-.app-card .app-sub { font-size: 13px; color: var(--ink-3); margin-top: 4px; }
-.app-card .chev { color: var(--ink-3); }
-.c-ledger .app-ic { background: var(--accent-soft, rgba(255,91,79,.14)); color: var(--accent); }
-.c-health .app-ic { background: var(--pos-soft); color: var(--pos); }
-.c-food .app-ic { background: rgba(244,183,64,.15); color: #f4b740; }
+
+/* =====================================================================
+   v1.6 — launcher cards, floating tab bar, closing motion
+   Everything here moves with transform and opacity only, so it stays smooth on iPhone.
+   ===================================================================== */
+.c-ledger { --tint: var(--accent); }
+.c-health { --tint: var(--pos); }
+.c-food { --tint: var(--warn); }
+.app-card {
+  display: block; position: relative; overflow: hidden; width: 100%; text-align: left; color: var(--ink);
+  padding: 18px 20px 20px; border-radius: 30px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--tint) 20%, transparent), var(--g-bg) 64%);
+  border: 1px solid color-mix(in srgb, var(--tint) 24%, var(--g-brd));
+  box-shadow: var(--g-hi), 0 14px 34px rgba(0, 0, 0, .2);
+  transition: transform .4s var(--spring);
+}
+.app-card::after { /* soft glow of the app's colour in the corner */
+  content: ""; position: absolute; right: -56px; top: -70px; width: 210px; height: 210px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--tint) 32%, transparent), transparent);
+}
+.app-card:active { transform: scale(.96); }
+.app-top { display: flex; align-items: center; gap: 11px; position: relative; z-index: 1; }
+.app-ic {
+  width: 38px; height: 38px; flex: 0 0 38px; border-radius: 12px; display: grid; place-items: center; color: #fff;
+  background: linear-gradient(150deg, color-mix(in srgb, var(--tint) 78%, #fff), var(--tint));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 6px 16px color-mix(in srgb, var(--tint) 38%, transparent);
+}
+.c-food .app-ic { color: #3a2a00; }
+.app-ic svg { width: 20px; height: 20px; }
+.app-name { font: 700 16.5px/1 var(--display); letter-spacing: -.01em; }
+.app-top .chev { margin-left: auto; color: var(--ink-3); display: grid; }
+.app-top .chev svg { width: 18px; height: 18px; }
+.app-big { font: 780 36px/1.05 var(--display); letter-spacing: -.03em; margin-top: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; z-index: 1; }
+.app-big small { font-size: 15px; font-weight: 600; letter-spacing: 0; color: var(--ink-2); }
+.app-sub { font-size: 13.5px; color: var(--ink-2); margin-top: 7px; }
+.app-bar { height: 6px; border-radius: 99px; background: var(--g-bg-2); margin-top: 14px; overflow: hidden; }
+.app-bar i { display: block; height: 100%; border-radius: 99px; background: var(--tint); transform-origin: left; animation: growX .9s var(--out) .3s both; }
+.app-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.app-chips > span { display: inline-flex; gap: 6px; align-items: baseline; padding: 6px 11px; border-radius: 99px; background: var(--g-bg-2); border: 1px solid var(--g-brd); font-size: 12.5px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.app-chips > span > i { font-style: normal; font-weight: 500; color: var(--ink-3); }
+/* cards arrive one after another */
+.view.no-tabs .app-card { animation: cardIn .6s var(--out) both; }
+.view.no-tabs .app-card:nth-child(2) { animation-delay: 70ms; }
+.view.no-tabs .app-card:nth-child(3) { animation-delay: 140ms; }
+@keyframes cardIn { from { opacity: 0; transform: translateY(22px) scale(.96); } }
+
+/* ---------- floating tab bar: a low capsule, the way iOS draws it ---------- */
+:root { --tabbar-h: 64px; --tab-bottom: max(10px, calc(env(safe-area-inset-bottom) - 14px)); }
+.tabbar {
+  --pad: 5px; --gap: 2px;
+  bottom: var(--tab-bottom); height: var(--tabbar-h); padding: var(--pad); gap: var(--gap); border-radius: 999px;
+  width: min(430px, calc(100% - 32px));
+  animation: barIn .5s var(--out) both;
+}
+.tabbar .ind {
+  top: var(--pad); bottom: var(--pad); border-radius: 999px;
+  width: calc((100% - 2 * var(--pad) - (var(--n, 5) - 1) * var(--gap)) / var(--n, 5));
+  left: calc(var(--pad) + var(--i, 0) * ((100% - 2 * var(--pad) - (var(--n, 5) - 1) * var(--gap)) / var(--n, 5) + var(--gap)));
+  background: var(--g-bg-2); transition: left .42s cubic-bezier(.3, 1.25, .5, 1);
+}
+.tab { gap: 3px; border-radius: 999px; font-size: 10.5px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink-2); transition: color .2s; }
+.tab svg { width: 23px; height: 23px; stroke-width: 1.8; }
+.tab.on { color: var(--accent); }
+.tab:active svg { transform: scale(.86); transition: transform .15s; }
+.tabbar[data-app="health"] .tab.on { color: var(--pos); }
+.tabbar[data-app="food"] .tab.on { color: var(--warn); }
+:root[data-theme="light"] .tabbar[data-app="food"] .tab.on { color: #b97a00; }
+@keyframes barIn { from { opacity: 0; transform: translate(-50%, 28px); } }
+.fab { bottom: calc(var(--tab-bottom) + var(--tabbar-h) + 14px); border-radius: 50%; width: 58px; height: 58px; animation: fabIn .5s var(--spring) .12s both, breathe 3.6s ease-in-out 1s infinite; }
+.calc-fab { bottom: calc(var(--tab-bottom) + var(--tabbar-h) + 18px); border-radius: 50%; animation: fabIn .5s var(--spring) .18s both; }
+@keyframes fabIn { from { opacity: 0; transform: scale(.4); } }
+#app { padding-bottom: calc(var(--tab-bottom) + var(--tabbar-h) + 92px); }
+
+/* ---------- opening and closing ---------- */
+/* an app opens by growing out of the launcher, and shrinks back into it */
+.view.zoom-in { animation: zoomIn .45s var(--out) both; transform-origin: 50% 35%; }
+.view.zoom-out { animation: zoomOut .45s var(--out) both; transform-origin: 50% 35%; }
+.view.leaving { animation: leave .17s ease-in both; transform-origin: 50% 35%; }
+#chrome.leaving > * { opacity: 0; transition: opacity .15s ease; }
+@keyframes zoomIn { from { opacity: 0; transform: scale(.92); } }
+@keyframes zoomOut { from { opacity: 0; transform: scale(1.07); } }
+@keyframes leave { to { opacity: 0; transform: scale(.94); } }
+/* sheets drop away faster than they arrive, and the dimming lifts with them */
+.sheet.closing { transition: transform .3s cubic-bezier(.5, 0, .85, .35), opacity .3s ease-in; opacity: .6; }
+.backdrop.closing { transition: opacity .3s ease-in; }
+.sheet.dragging { transition: none; }
+.sheet .grab { width: 38px; height: 5px; margin-bottom: 10px; background: var(--ink-3); opacity: .55; }
+.sheet .grab, .sheet-head { touch-action: none; }
+.toast { transition: opacity .22s ease, transform .45s var(--spring); }
+.toast:not(.show) { transform: translate(-50%, -14px) scale(.94); }

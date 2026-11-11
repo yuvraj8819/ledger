@@ -36,12 +36,22 @@ const appOf = (tab) => TAB_APP[tab] || null;
 // a link straight to a tab (or a steps link) opens it; otherwise start on the launcher
 if (!TABS.includes(ui.tab)) ui.tab = null;
 
+let lastBalance = null; // to hear when money moves
 function commit(msg, sound = 'success') {
   S.save(state);
   S.autoSnapshot(state);
   if (msg) ui.fresh = true;
   render();
-  if (msg) { toast(msg); X.play(sound); }
+  if (msg) toast(msg);
+  const moved = balanceSound();
+  if (moved) X.play(moved); else if (msg) X.play(sound);
+}
+/** 'coinIn' / 'coinOut' if the total balance changed since the last look, else null. */
+function balanceSound() {
+  const bal = C.balances(state).total;
+  const moved = lastBalance != null && bal !== lastBalance ? (bal > lastBalance ? 'coinIn' : 'coinOut') : null;
+  lastBalance = bal;
+  return moved;
 }
 /** A toast for "you missed something", with the error sound. */
 function warn(msg) { toast(msg); X.play('error'); }
@@ -181,20 +191,31 @@ function syncChrome() {
 function openTab(tab, { push = false } = {}) {
   closeAllSheets();
   if (appOf(tab) !== appOf(ui.tab) || tab === 'health' || tab === 'food') ui.hday = null;
+  if (!ui.tab) ui.nav = 'zoom-in';
   ui.tab = tab;
   if (push) history.pushState({ tab }, '', '#' + tab); else history.replaceState({ tab }, '', '#' + tab);
   render(); window.scrollTo(0, 0);
 }
 function goApps() {
-  closeAllSheets(); ui.tab = null; ui.hday = null;
-  history.replaceState(null, '', location.pathname);
-  render(); window.scrollTo(0, 0);
+  if (ui.leaving) return;
+  closeAllSheets();
+  const done = () => {
+    ui.leaving = false; ui.tab = null; ui.hday = null; ui.nav = 'zoom-out';
+    history.replaceState(null, '', location.pathname);
+    render(); window.scrollTo(0, 0);
+  };
+  const main = $('#app main');
+  if (!main || matchMedia('(prefers-reduced-motion: reduce)').matches) return done();
+  ui.leaving = true;
+  main.classList.add('leaving'); $('#chrome').classList.add('leaving');
+  setTimeout(() => { $('#chrome').classList.remove('leaving'); done(); }, 170);
 }
 
 function render() {
   const s = state.settings;
   document.documentElement.dataset.theme = s.theme;
   X.setEnabled(s.sound !== false);
+  X.setPlayOnSilent(s.soundSilent !== false);
   document.body.classList.toggle('privacy', !!s.hideAmounts);
   $('meta[name="theme-color"]')?.setAttribute('content', s.theme === 'light' ? '#f3f2ee' : '#08090a');
   const app = $('#app');
@@ -204,8 +225,9 @@ function render() {
   const key = ui.tab || 'apps';
   const scroll = window.scrollY;
   const same = app.dataset.tab === key;
-  app.innerHTML = topbar() + `<main class="view ${ui.tab ? '' : 'no-tabs'} ${same ? (ui.fresh ? 'refresh' : '') : 'enter'}">${ui.tab ? views[ui.tab]() : appsView()}</main>`;
+  app.innerHTML = topbar() + `<main class="view ${ui.tab ? '' : 'no-tabs'} ${same ? (ui.fresh ? 'refresh' : '') : `enter ${ui.nav || ''}`}">${ui.tab ? views[ui.tab]() : appsView()}</main>`;
   app.dataset.tab = key;
+  ui.nav = null;
   syncChrome();
   const tn = $('#total-num');
   if (tn) {
@@ -222,6 +244,7 @@ function render() {
 /** The launcher: one big card per app, each with today's headline. */
 function appsView() {
   const b = C.balances(state);
+  const safe = C.safeToSpend(state);
   const h = state.health, t = today();
   const td = h.days[t] || {};
   const v = H.verdict(td, H.rulesOf(h));
@@ -230,19 +253,24 @@ function appsView() {
   const eaten = N.totals(td.meals || []);
   const water = (h.water[t] || []).reduce((s, x) => s + x, 0);
   const hr = new Date().getHours();
-  const card = (app, icon, cls, big, sub, tag = '') => `<button class="app-card ${cls}" data-act="open-app" data-app="${app}">
-    <div class="app-ic">${icon}</div>
-    <div class="app-mid"><div class="app-name">${esc(APPS[app].name)}${tag}</div><div class="app-big num">${big}</div><div class="app-sub">${sub}</div></div>
-    <span class="chev">${I.chev}</span></button>`;
+  const pct = (a, of) => (of ? Math.max(0, Math.min(100, (a / of) * 100)).toFixed(1) : 0);
+  const chip = (label, val) => `<span><i>${label}</i>${val}</span>`;
+  const card = (app, icon, big, sub, { bar = null, tag = '', chips = '' } = {}) => `<button class="app-card c-${app}" data-act="open-app" data-app="${app}">
+    <div class="app-top"><div class="app-ic">${icon}</div><div class="app-name">${esc(APPS[app].name)}</div>${tag}<span class="chev">${I.chev}</span></div>
+    <div class="app-big num">${big}</div>
+    <div class="app-sub">${sub}</div>
+    ${bar != null ? `<div class="app-bar"><i style="width:${bar}%"></i></div>` : ''}
+    ${chips ? `<div class="app-chips">${chips}</div>` : ''}</button>`;
   return `<div class="apps-hello"><div class="eyebrow">${esc(new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' }))}</div>
       <h2>${hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening'}${state.settings.name ? `, ${esc(state.settings.name)}` : ''}</h2></div>
     <div class="app-cards">
-      ${card('ledger', I.wallet, 'c-ledger', `<span class="money">${rs(b.total)}</span>`, 'Total balance')}
-      ${card('health', I.steps, 'c-health', h.enabled ? `${v.stepsKnown ? nf0.format(v.steps) : '—'}<small> / ${nf0.format(h.stepGoal)} steps</small>` : 'Earn for walking',
+      ${card('ledger', I.wallet, `<span class="money">${rs(b.total)}</span>`, `Safe to spend today ${money(safe.left)}`,
+    { chips: chip('Cash', money(b.cash)) + chip('Bank', money(b.bank)) + (b.card > 0 ? chip('Card due', money(b.card)) : '') })}
+      ${card('health', I.steps, h.enabled ? `${v.stepsKnown ? nf0.format(v.steps) : '—'}<small> / ${nf0.format(h.stepGoal)} steps</small>` : 'Earn for walking',
     h.enabled ? (waiting.length ? `${esc(fmtDay(waiting[0]))} is waiting for its steps` : `If today ended now: ${v.net ? rs(v.net, { sign: true }) : '₹0'}`) : `+${rs(h.reward)} for ${nf0.format(h.stepGoal)} steps, −${rs(h.penalty)} if not`,
-    waiting.length ? '<span class="tag warn">sync</span>' : '')}
-      ${card('food', I.food, 'c-food', `${nf0.format(Math.max(0, h.calorieGoal - eaten.kcal))}<small> kcal left</small>`,
-    `${nf0.format(eaten.kcal)} eaten${tg ? ` · protein ${Math.round(eaten.p)}/${tg.protein} g` : ''}${water ? ` · ${(water / 1000).toFixed(1)} L water` : ''}`)}
+    { bar: h.enabled ? pct(v.steps || 0, h.stepGoal) : null, tag: waiting.length ? '<span class="tag warn">sync</span>' : '' })}
+      ${card('food', I.food, `${nf0.format(Math.max(0, h.calorieGoal - eaten.kcal))}<small> kcal left</small>`, `${nf0.format(eaten.kcal)} of ${nf0.format(h.calorieGoal)} eaten`,
+    { bar: pct(eaten.kcal, h.calorieGoal), chips: (tg ? chip('Protein', `${Math.round(eaten.p)}/${tg.protein} g`) : '') + chip('Water', `${(water / 1000).toFixed(1)} L`) })}
     </div>
     <p class="foot-note">The three are linked: your steps and food settle into your ledger balance every night.</p>`;
 }
@@ -424,6 +452,8 @@ function settingsView() {
     ${item('export', 'download', 'Export & backup', 'Excel, backup file, restore')}
     ${item('device', 'device', 'This device', 'Snapshots, demo data, erase, version')}
     <section class="card tap" data-act="toggle-sound"><div class="set-row"><div class="ic">${I.sound}</div><div><div class="t">Sounds & haptics</div><div class="s">Soft taps and chimes as you use the app</div></div><span class="switch ${state.settings.sound !== false ? 'on' : ''}" style="margin-left:auto"></span></div></section>
+    ${state.settings.sound !== false && IOS ? `<section class="card tap" data-act="toggle-silent"><div class="set-row"><div class="ic">${I.sound}</div><div><div class="t">Play on silent</div><div class="s">Hear sounds with the ring switch off. May pause music from other apps.</div></div><span class="switch ${state.settings.soundSilent !== false ? 'on' : ''}" style="margin-left:auto"></span></div></section>` : ''}
+    ${state.settings.sound !== false ? `<section class="card tap" data-act="test-sound"><div class="set-row"><div class="ic">${I.rupee}</div><div><div class="t">Test the sounds</div><div class="s">Plays money in, then money out</div></div><span class="go">${I.arrow}</span></div></section>` : ''}
     <p class="foot-note">Everything lives on this device only — no cloud, no account. Keep a backup now and then.<br><button class="link" data-act="check-update" style="font-size:13px">Version ${S.VERSION} · check for updates</button></p>`;
 }
 
@@ -452,17 +482,39 @@ function openSheet(title, body, { onMount, wide } = {}) {
   bd.addEventListener('click', () => closeSheet());
   const rec = { bd, sh };
   sheetStack.push(rec);
+  dragToClose(sh);
   X.play('open');
   onMount?.(sh);
   return sh;
+}
+/** Pull a sheet down by its handle or title to close it. */
+function dragToClose(sh) {
+  let y0 = null, dy = 0;
+  sh.addEventListener('touchstart', (e) => {
+    if (!e.target.closest('.grab, .sheet-head') || e.target.closest('button')) return;
+    y0 = e.touches[0].clientY; dy = 0; sh.classList.add('dragging');
+  }, { passive: true });
+  sh.addEventListener('touchmove', (e) => {
+    if (y0 == null) return;
+    dy = Math.max(0, e.touches[0].clientY - y0);
+    sh.style.transform = `translate(-50%, ${dy}px)`;
+  }, { passive: true });
+  const end = () => {
+    if (y0 == null) return;
+    y0 = null; sh.classList.remove('dragging');
+    if (dy > 90 && sheetStack.at(-1)?.sh === sh) closeSheet(); else sh.style.transform = '';
+  };
+  sh.addEventListener('touchend', end); sh.addEventListener('touchcancel', end);
 }
 function closeSheet() {
   const rec = sheetStack.pop();
   if (!rec) return;
   rec.onClose?.();
   X.play('close');
+  rec.bd.classList.add('closing'); rec.sh.classList.add('closing');
+  rec.sh.style.transform = '';
   rec.bd.classList.remove('show'); rec.sh.classList.remove('show');
-  setTimeout(() => { rec.bd.remove(); rec.sh.remove(); }, 480);
+  setTimeout(() => { rec.bd.remove(); rec.sh.remove(); }, 340);
   if (!sheetStack.length) { unlockScroll(); if (reloadWhenFree) setTimeout(() => location.reload(), 500); }
 }
 function closeAllSheets() { while (sheetStack.length) closeSheet(); }
@@ -584,8 +636,9 @@ function deleteEntry(id) {
   if (idx < 0) return;
   const [removed] = state.entries.splice(idx, 1);
   closeAllSheets();
+  const before = lastBalance;
   commit();
-  X.play('delete');
+  if (lastBalance === before) X.play('delete');
   toast('Entry deleted', { label: 'Undo', run: () => { state.entries.push(removed); commit('Restored'); } });
 }
 
@@ -956,7 +1009,8 @@ function settleHealth({ quietRender = false } = {}) {
   S.autoSnapshot(state);
   if (!quietRender && !sheetStack.length) { ui.fresh = true; render(); }
   const msg = r.changes.length === 1 ? `${fmtDay(r.changes[0].day)} settled: ${rs(r.net, { sign: true })}` : `${r.changes.length} days settled: ${rs(r.net, { sign: true })}`;
-  setTimeout(() => { toast(msg); X.play(r.net >= 0 ? 'income' : 'delete'); }, quietRender ? 800 : 0);
+  const coin = balanceSound() || (r.net >= 0 ? 'coinIn' : 'coinOut');
+  setTimeout(() => { toast(msg); X.play(coin); }, quietRender ? 800 : 0);
 }
 function scheduleMidnight() {
   const n = new Date(), next = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1, 0, 0, 5);
@@ -1267,7 +1321,7 @@ function foodSheet(d, meal) {
     const rec = dayRec(d);
     if (meal) Object.assign(rec.meals.find((x) => x.id === meal.id), m);
     else rec.meals.push({ ...m, id: S.uid() });
-    closeSheet();
+    closeAllSheets();
     healthCommit(meal ? 'Saved' : `${m.name} · ${kcal(m.kcal)} added`);
   });
 }
@@ -1839,6 +1893,8 @@ document.addEventListener('click', async (ev) => {
       break;
     }
     case 'dismiss-install': try { localStorage.setItem(hintKey, '1'); } catch { /* ignore */ } render(); break;
+    case 'toggle-silent': state.settings.soundSilent = state.settings.soundSilent === false; S.save(state); render(); X.play('success'); break;
+    case 'test-sound': X.play('coinIn'); setTimeout(() => X.play('coinOut'), 900); break;
     case 'toggle-sound': state.settings.sound = state.settings.sound === false; S.save(state); render(); X.play('success'); break;
     case 'close-sheet': if (!el.closest('.sheet-body') || el.classList.contains('btn')) closeSheet(); break;
     case 'safe-help': {
@@ -1884,13 +1940,13 @@ document.addEventListener('click', async (ev) => {
 });
 // small taps for pickers, keys and tabs (bigger moments play their own sound)
 document.addEventListener('click', (ev) => {
-  const t = ev.target.closest('.key, .pad button, .tab, .chip, .opt, .seg button, .cat, .check, [data-switch], .icon-btn');
+  const t = ev.target.closest('.key, .pad button, .tab, .chip, .opt, .seg button, .cat, .check, [data-switch], .icon-btn, .app-card, .qa');
   if (!t) return;
-  X.play(t.matches('.key, .pad button') ? 'key' : t.matches('.tab') ? 'tab' : t.matches('.check, [data-switch]') ? (t.querySelector('.on, .switch.on') || t.classList.contains('on') ? 'off' : 'on') : 'tick');
+  X.play(t.matches('.key, .pad button') ? 'key' : t.matches('.app-card') ? 'open' : t.matches('[data-act="go-apps"]') ? 'close' : t.matches('.tab') ? 'tab' : t.matches('.check, [data-switch]') ? (t.querySelector('.on, .switch.on') || t.classList.contains('on') ? 'off' : 'on') : 'tick');
 }, true);
 addEventListener('keydown', (e) => { if (e.key === 'Escape' && sheetStack.length) closeSheet(); });
 // back gesture / back button: a hash that isn't a tab means the launcher
-const followHash = () => { const t = location.hash.slice(1); const next = TABS.includes(t) ? t : null; if (next !== ui.tab) { closeAllSheets(); ui.tab = next; ui.hday = null; render(); window.scrollTo(0, 0); } };
+const followHash = () => { const t = location.hash.slice(1); const next = TABS.includes(t) ? t : null; if (next !== ui.tab) { closeAllSheets(); ui.nav = next ? (ui.tab ? null : 'zoom-in') : 'zoom-out'; ui.tab = next; ui.hday = null; render(); window.scrollTo(0, 0); } };
 addEventListener('hashchange', followHash);
 addEventListener('popstate', followHash);
 document.addEventListener('visibilitychange', () => {
@@ -1957,6 +2013,7 @@ if (window.visualViewport) {
 // ================================================================ boot
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 postRecurring();
+lastBalance = C.balances(state).total;
 importStepsFromLink();
 settleHealth({ quietRender: true });
 render();
