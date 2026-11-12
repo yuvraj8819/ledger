@@ -161,7 +161,7 @@ function topbar() {
   const a = APPS[appOf(ui.tab)];
   return `<header class="topbar">
     ${a ? `<div class="brand with-back"><button class="icon-btn back" data-act="go-apps" aria-label="All apps">${I.back}</button><div><h1>${esc(a.name)}</h1><p>${esc(a.sub)}</p></div></div>`
-    : `<div class="brand"><h1>Ledger</h1><p>Money · Health · Food</p></div>`}
+    : `<div class="brand"><h1>Balance</h1><p>Money · Health · Food</p></div>`}
     <div class="top-actions">
       ${appOf(ui.tab) === 'ledger' ? `<button class="icon-btn" data-act="search" aria-label="Search">${I.search}</button>` : ''}
       <button class="icon-btn ${s.hideAmounts ? 'on' : ''}" data-act="toggle-hide" aria-label="${s.hideAmounts ? 'Show amounts' : 'Hide amounts'}">${s.hideAmounts ? I.eyeOff : I.eye}</button>
@@ -278,13 +278,14 @@ function appsView() {
 // ================================================================ views
 function welcomeView() {
   return `<div class="welcome view">
-    <div class="lock" style="position:static;padding:0;background:none;backdrop-filter:none;animation:none;align-items:flex-start"><div class="logo" style="width:68px;height:68px"><img src="icons/icon-192.png" alt="Ledger"></div></div>
-    <h1>Every rupee,<br>accounted for.</h1>
-    <p>A private ledger for cash, UPI and cards. It lives on this device only — no account, no cloud.</p>
+    <div class="lock" style="position:static;padding:0;background:none;backdrop-filter:none;animation:none;align-items:flex-start"><div class="logo" style="width:68px;height:68px"><img src="icons/icon-192.png" alt="Balance"></div></div>
+    <h1>Money, steps<br>and food, in balance.</h1>
+    <p>Your ledger, your Apple Watch steps and your diet in one private app. It lives on this device only — no account, no cloud.</p>
     <div class="feature-list">
       <div><span>${I.rupee}</span>Know what's safe to spend today</div>
       <div><span>${I.accounts}</span>Split money into accounts like Savings or Trip</div>
-      <div><span>${I.pay}</span>Pay by UPI and log it in one go</div>
+      <div><span>${I.steps}</span>Earn for walking, pay for overeating</div>
+      <div><span>${I.food}</span>Track food by barcode, label or search</div>
       <div><span>${I.lock}</span>Passcode lock and hide amounts</div>
     </div>
     <div class="card">
@@ -313,8 +314,8 @@ function homeView() {
   const wd = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
   return `
-  ${showInstallHint() ? `<section class="card install"><img class="logo-sm" src="icons/icon-192.png" alt=""><div><div class="t">Install Ledger</div><div class="s">${IOS ? `Tap Share ${I.up} then <b>Add to Home Screen</b> to open it like an app.` : 'Open your browser menu and choose <b>Install app</b> or <b>Add to Home screen</b>.'}</div></div><button class="x" data-act="dismiss-install" aria-label="Dismiss">${I.x}</button></section>` : ''}
-  ${!state.settings.pinHash && (() => { try { return !localStorage.getItem('ledger.passcodeHint'); } catch { return false; } })() ? `<section class="card install"><div class="ic-lock">${I.lock}</div><div><div class="t">Add a passcode</div><div class="s">Lock Ledger so only you can open it.</div></div><button class="btn sm accent" data-act="lock-now" style="margin-left:auto">Set</button><button class="x" data-act="dismiss-passcode" aria-label="Dismiss" style="margin-left:4px">${I.x}</button></section>` : ''}
+  ${showInstallHint() ? `<section class="card install"><img class="logo-sm" src="icons/icon-192.png" alt=""><div><div class="t">Install Balance</div><div class="s">${IOS ? `Tap Share ${I.up} then <b>Add to Home Screen</b> to open it like an app.` : 'Open your browser menu and choose <b>Install app</b> or <b>Add to Home screen</b>.'}</div></div><button class="x" data-act="dismiss-install" aria-label="Dismiss">${I.x}</button></section>` : ''}
+  ${!state.settings.pinHash && (() => { try { return !localStorage.getItem('ledger.passcodeHint'); } catch { return false; } })() ? `<section class="card install"><div class="ic-lock">${I.lock}</div><div><div class="t">Add a passcode</div><div class="s">Lock Balance so only you can open it.</div></div><button class="btn sm accent" data-act="lock-now" style="margin-left:auto">Set</button><button class="x" data-act="dismiss-passcode" aria-label="Dismiss" style="margin-left:4px">${I.x}</button></section>` : ''}
   <section class="card hero">
     <div class="eyebrow">Total balance</div>
     <div class="total num money">${b.total < 0 ? '−' : ''}<span class="cur">₹</span><span id="total-num" data-v="${Math.abs(Math.round(b.total / 100))}">${nf0.format(Math.abs(Math.round(b.total / 100)))}</span></div>
@@ -754,7 +755,7 @@ function payFlow(target) {
     <div class="field"><div class="eyebrow label">Account</div><div class="opts">${state.accounts.map((a, i) => `<button class="opt ${i === 0 ? 'on' : ''}" data-acc="${a.id}">${esc(a.name)}</button>`).join('')}</div></div>
     ${IOS ? `<div class="eyebrow" style="margin:20px 2px 8px">Pay with</div><div class="opts three">${['gpay', 'phonepe', 'paytm'].map((a) => `<button class="btn accent" data-upi="${a}" style="padding:14px 4px;font-size:14px">${C.UPI_APPS[a].label}</button>`).join('')}</div><button class="btn ghost" data-log style="margin-top:10px">Just log it</button>`
       : `<div class="btn-row"><button class="btn ghost" data-log>Just log it</button><button class="btn accent" data-upi="default">Open UPI app</button></div>`}
-    <p class="faint" style="font-size:12.5px;text-align:center;margin-top:14px">Your UPI app does the paying. Ledger never sees your PIN or bank details.</p>`);
+    <p class="faint" style="font-size:12.5px;text-align:center;margin-top:14px">Your UPI app does the paying. Balance never sees your PIN or bank details.</p>`);
   if (FINE) setTimeout(() => $('#pay-amt', sh).focus(), 300);
   const build = () => ({ id: S.uid(), createdAt: Date.now(), type: 'spent', method: 'upi', date: today(), time: nowTime(),
     amount: C.toPaise(($('#pay-amt', sh).value || '').replace(/,/g, '')), note: $('#pay-note', sh).value.trim() || target.name || target.vpa,
@@ -855,7 +856,7 @@ function settingsPage(page) {
   } else if (page === 'privacy') {
     title = 'Privacy & lock';
     html = `<div class="card" style="padding:2px 18px">
-      <div class="line-item"><div class="grow"><div class="t">Passcode</div><div class="s">${s.pinHash ? 'On — asked when you open Ledger' : 'Off'}</div></div>${s.pinHash ? `<button class="btn sm ghost" data-pin="change">Change</button><button class="btn sm danger" data-pin="off">Turn off</button>` : `<button class="btn sm accent" data-pin="set">Set passcode</button>`}</div>
+      <div class="line-item"><div class="grow"><div class="t">Passcode</div><div class="s">${s.pinHash ? 'On — asked when you open Balance' : 'Off'}</div></div>${s.pinHash ? `<button class="btn sm ghost" data-pin="change">Change</button><button class="btn sm danger" data-pin="off">Turn off</button>` : `<button class="btn sm accent" data-pin="set">Set passcode</button>`}</div>
       ${s.pinHash ? `<div class="line-item"><div class="grow"><div class="t">Lock again after</div><div class="s">Time away from the app</div></div><select class="input" data-lock-after style="width:auto;padding:8px 10px;font-size:14px">${[[0, 'Immediately'], [60, '1 minute'], [300, '5 minutes'], [1800, '30 minutes']].map(([v, l]) => `<option value="${v}" ${Number(s.lockAfter) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>` : ''}
       ${sw('hideAmounts', 'Hide amounts', 'Blur balances until you tap the eye')}
       ${sw('showHidden', 'Show hidden entries', `${state.entries.filter((e) => e.hidden).length} hidden — they always count in totals`)}
@@ -878,8 +879,8 @@ function settingsPage(page) {
     mount = (sh) => {
       sh.addEventListener('click', (ev) => {
         const x = ev.target.closest('[data-x]')?.dataset.x;
-        if (x === 'csv') download(`ledger-${today()}.csv`, new Blob(['﻿' + C.toCSV(state)], { type: 'text/csv;charset=utf-8' }));
-        if (x === 'json') download(`ledger-backup-${today()}.json`, S.backupBlob(state));
+        if (x === 'csv') download(`balance-${today()}.csv`, new Blob(['﻿' + C.toCSV(state)], { type: 'text/csv;charset=utf-8' }));
+        if (x === 'json') download(`balance-backup-${today()}.json`, S.backupBlob(state));
       });
       sh.addEventListener('change', async (ev) => {
         const f = ev.target.files?.[0]; if (!f) return;
@@ -899,7 +900,7 @@ function settingsPage(page) {
     html = `<div class="section-head" style="margin-top:0"><h2>Daily snapshots</h2></div>
       <div class="card" style="padding:2px 18px">${snaps.length ? snaps.map((sn, i) => `<div class="line-item"><div class="grow"><div class="t">${esc(fmtDay(sn.date))}</div><div class="s">${sn.count} entries · ${new Date(sn.at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}</div></div><button class="btn sm ghost" data-snap="${i}">Restore</button></div>`).join('') : '<p class="faint" style="padding:14px 0;margin:0">A snapshot is kept each day you make changes.</p>'}</div>
       <div class="btn-row" style="flex-direction:column"><button class="btn accent" data-act="check-update">Check for updates</button><button class="btn ghost" data-demo>Load demo data</button><button class="btn danger" data-erase>Erase everything</button></div>
-      <p class="foot-note">Ledger ${S.VERSION} · ${(used / 1024).toFixed(1)} KB stored · ${state.entries.length} entries</p>`;
+      <p class="foot-note">Balance ${S.VERSION} · ${(used / 1024).toFixed(1)} KB stored · ${state.entries.length} entries</p>`;
     mount = (sh) => sh.addEventListener('click', async (ev) => {
       const sn = ev.target.closest('[data-snap]')?.dataset.snap;
       if (sn != null) { const snap = S.listSnapshots()[Number(sn)]; if (await ask('Restore snapshot?', `Go back to ${esc(fmtDay(snap.date))} (${snap.count} entries)? What you have now is replaced.`, 'Restore', true)) { state = S.parseBackup(JSON.stringify(snap.data)); closeAllSheets(); commit('Snapshot restored'); } }
@@ -1046,7 +1047,7 @@ async function pasteSteps(d) {
   if (Object.keys(got).length) return applySteps(got, 'health');
   const bare = text && H.parseSteps(text, d)[d];
   stepsSheet(d, bare != null ? { value: bare, note: `The clipboard has ${nf0.format(bare)} but no date. Is that ${fmtDay(d)}'s count?` }
-    : { note: text == null ? 'Couldn’t read the clipboard here. Paste what the shortcut copied into the box below.' : 'No step count on the clipboard. Run your “Ledger steps” shortcut first, or type the number.' });
+    : { note: text == null ? 'Couldn’t read the clipboard here. Paste what the shortcut copied into the box below.' : 'No step count on the clipboard. Run your steps shortcut first, or type the number.' });
 }
 
 function rulesList(h) {
@@ -1196,7 +1197,7 @@ function mealsView() {
 
 function bodyView() {
   const h = state.health; const p = h.profile; const tg = TG();
-  if (!p) return `<section class="card hero"><div class="eyebrow">Body & goal</div><p class="muted" style="margin:8px 0 14px;font-size:14.5px">Tell Ledger your age, height, weight and goal. It works out your calories, protein, carbs, fat and water, and your calorie target becomes the limit for the overeating rule.</p><button class="btn accent" data-act="h-body">Set it up</button></section>${weightCard()}`;
+  if (!p) return `<section class="card hero"><div class="eyebrow">Body & goal</div><p class="muted" style="margin:8px 0 14px;font-size:14.5px">Tell Balance your age, height, weight and goal. It works out your calories, protein, carbs, fat and water, and your calorie target becomes the limit for the overeating rule.</p><button class="btn accent" data-act="h-body">Set it up</button></section>${weightCard()}`;
   const b = N.bmi(p); const bl = N.bmiLabel(b, p.age);
   return `<section class="card hero">
     <div class="kc-row"><div><div class="eyebrow">Daily target</div><div class="h-big num">${nf0.format(tg.target)}<small>kcal</small></div></div><div class="eaten"><span class="eyebrow">Maintenance</span><b class="num">${nf0.format(tg.maintenance)}</b></div></div>
@@ -1329,28 +1330,28 @@ function foodSheet(d, meal) {
 function connectSheet() {
   const site = location.origin + location.pathname;
   openSheet('Connect Apple Watch', `
-    <p class="lead" style="margin-top:0">Websites can't read Apple Health directly, so a Shortcut on your iPhone does it. Your Watch syncs steps to the iPhone's Health app. The Shortcut reads them and copies them, and Ledger pastes them in.</p>
+    <p class="lead" style="margin-top:0">Websites can't read Apple Health directly, so a Shortcut on your iPhone does it. Your Watch syncs steps to the iPhone's Health app. The Shortcut reads them and copies them, and Balance pastes them in.</p>
     <div class="eyebrow label">1 · Make the shortcut (once)</div>
     <ol class="steps-guide">
-      <li>Open <b>Shortcuts</b> → <b>+</b>. Name it <b>Ledger steps</b>.</li>
+      <li>Open <b>Shortcuts</b> → <b>+</b>. Name it <b>Balance steps</b>. (Already made one called Ledger steps? It works as it is.)</li>
       <li>Add <b>Find Health Samples</b>: Type <b>Steps</b>, Start Date <b>is today</b>. Tap it and set <b>Group By: Day</b>.</li>
       <li>Add <b>Calculate Statistics</b>: <b>Sum</b> of the Health Samples.</li>
       <li>Add <b>Format Date</b>: Current Date, Custom format <code>yyyy-MM-dd</code>.</li>
       <li>Add <b>Text</b>: the Formatted Date, then <code>=</code>, then the Statistics result. It reads like <code>2026-11-10=12034</code>.</li>
-      <li>Add <b>Copy to Clipboard</b> (the Text), then <b>Show Notification</b> “Steps ready for Ledger”.</li>
+      <li>Add <b>Copy to Clipboard</b> (the Text), then <b>Show Notification</b> “Steps ready for Balance”.</li>
       <li>Run it once and tap <b>Allow</b> when it asks for Health access.</li>
     </ol>
     <div class="eyebrow label" style="margin-top:20px">2 · Run it at 11:59 PM every day</div>
     <ol class="steps-guide">
       <li>Shortcuts → <b>Automation</b> → <b>+</b> → <b>Time of Day</b> → <b>11:59 PM</b>, <b>Daily</b>.</li>
-      <li>Choose <b>Run Immediately</b>, then pick <b>Ledger steps</b>.</li>
+      <li>Choose <b>Run Immediately</b>, then pick your steps shortcut.</li>
     </ol>
     <div class="eyebrow label" style="margin-top:20px">3 · Paste it in</div>
     <ol class="steps-guide">
-      <li>Open Ledger → <b>Health</b> → <b>Paste from Health</b>, and tap <b>Paste</b> when iPhone asks. That day settles straight away.</li>
+      <li>Open Balance → <b>Health</b> → <b>Paste from Health</b>, and tap <b>Paste</b> when iPhone asks. That day settles straight away.</li>
       <li>Missed it? Run the shortcut by hand the next morning, but change its Start Date to <b>yesterday</b> and its date to yesterday too. Or just type the steps.</li>
     </ol>
-    <p class="faint" style="font-size:12.5px;margin:16px 2px 0">iPhone hides Health data while the phone is locked, so the 11:59 PM run can fail if your phone is locked. If it does, Ledger simply waits. It never fines a day without a final count. A count taken before 11:30 PM only counts if it already hits your goal.</p>
+    <p class="faint" style="font-size:12.5px;margin:16px 2px 0">iPhone hides Health data while the phone is locked, so the 11:59 PM run can fail if your phone is locked. If it does, Balance simply waits. It never fines a day without a final count. A count taken before 11:30 PM only counts if it already hits your goal.</p>
     <p class="faint" style="font-size:12.5px;margin:10px 2px 0">On Android or a computer, a link works too: <span class="code-line">${esc(site)}#steps=2026-11-10=12034</span></p>
     <div class="btn-row"><button class="btn accent" data-act="close-sheet">Done</button></div>`);
 }
@@ -1467,7 +1468,7 @@ function profileSheet(first = false) {
     </div>`;
   };
   const body = () => `
-    ${first ? '<p class="lead" style="margin-top:0">Tell Ledger about you. It works out your calories, protein, carbs, fat and water, and your calorie target becomes the limit for the overeating rule.</p>' : ''}
+    ${first ? '<p class="lead" style="margin-top:0">Tell Balance about you. It works out your calories, protein, carbs, fat and water, and your calorie target becomes the limit for the overeating rule.</p>' : ''}
     <div class="eyebrow label">Sex</div>${seg('sex', [['male', 'Male'], ['female', 'Female']])}
     <div class="opts" style="margin-top:16px">${field('pp-age', 'Age', p.age, 'years', 'numeric')}${field('pp-h', 'Height', p.heightCm, 'cm')}</div>
     <div class="opts" style="margin-top:12px">${field('pp-w', 'Weight', p.weightKg, 'kg')}${field('pp-bf', 'Body fat (optional)', p.bodyFat, '%')}</div>
@@ -1826,7 +1827,7 @@ function renderLock() {
   if (!ui.locked || !state.settings.pinHash) { el?.remove(); if (lockKeyHandler) { removeEventListener('keydown', lockKeyHandler); lockKeyHandler = null; } return; }
   if (el) return;
   el = document.createElement('div'); el.className = 'lock'; el.id = 'lock';
-  el.innerHTML = `<div class="logo"><img src="icons/icon-192.png" alt="Ledger"></div><h2>Ledger</h2><div class="sub">Enter passcode</div>${pinPad('lk')}`;
+  el.innerHTML = `<div class="logo"><img src="icons/icon-192.png" alt="Balance"></div><h2>Balance</h2><div class="sub">Enter passcode</div>${pinPad('lk')}`;
   document.body.append(el);
   let tries = 0;
   const press = wirePad(el, 'lk', async (pin) => {
@@ -1845,7 +1846,7 @@ function setPinFlow(done) {
     if (!pin) { closeSheet(); return; }
     if (!first) { first = pin; $('#pin-msg', sh).textContent = 'Enter it again'; return true; }
     if (pin !== first) { X.play('error'); first = null; $('#pin-msg', sh).textContent = "Didn't match — choose 4 digits"; return false; }
-    state.settings.pinHash = await S.hashPin(pin); S.save(state); closeSheet(); toast('Passcode on. Tap the lock at the top to lock Ledger any time.'); done?.(); return true;
+    state.settings.pinHash = await S.hashPin(pin); S.save(state); closeSheet(); toast('Passcode on. Tap the lock at the top to lock Balance any time.'); done?.(); return true;
   }, { cancelLabel: 'Cancel' });
 }
 

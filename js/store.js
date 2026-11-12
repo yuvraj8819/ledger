@@ -4,7 +4,7 @@ import { defaultHealth } from './health.js';
 
 const KEY = 'ledger.v1';
 const SNAP_KEY = 'ledger.snapshots';
-export const VERSION = '1.6.0';
+export const VERSION = '1.7.0';
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
@@ -77,7 +77,7 @@ export function backupBlob(state) {
 export function parseBackup(text) {
   const j = JSON.parse(text);
   const s = j.state || j;
-  if (!s || !Array.isArray(s.entries) || !Array.isArray(s.accounts)) throw new Error('This file is not a Ledger backup.');
+  if (!s || !Array.isArray(s.entries) || !Array.isArray(s.accounts)) throw new Error('This file is not a Balance (or Ledger) backup.');
   return migrate(s);
 }
 

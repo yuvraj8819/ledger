@@ -1,15 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b1b1e"/><stop offset="1" stop-color="#050506"/></linearGradient>
-    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34343a"/><stop offset="1" stop-color="#17171a"/></linearGradient>
-    <linearGradient id="card1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#cfcfd3"/></linearGradient>
-    <linearGradient id="card2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff7a68"/><stop offset="1" stop-color="#e8463b"/></linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#202128"/><stop offset="1" stop-color="#07070a"/></linearGradient>
+    <radialGradient id="glow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ffffff" stop-opacity=".16"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
+    <linearGradient id="g-money" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9a8a"/><stop offset="1" stop-color="#e8463b"/></linearGradient>
+    <linearGradient id="g-steps" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7ef0c0"/><stop offset="1" stop-color="#22a874"/></linearGradient>
+    <linearGradient id="g-food" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#f4a62a"/><stop offset="1" stop-color="#ffdb7a"/></linearGradient>
+    <radialGradient id="dot" cx=".38" cy=".32" r=".75"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#d6d7de"/></radialGradient>
   </defs>
-  <rect width="1024" height="1024" fill="url(#bg)"/>
-  <g transform="rotate(-9 512 400)"><rect x="276" y="236" width="440" height="300" rx="48" fill="url(#card1)"/><rect x="326" y="296" width="120" height="22" rx="11" fill="#17171a" opacity=".16"/></g>
-  <g transform="rotate(7 512 420)"><rect x="318" y="288" width="440" height="300" rx="48" fill="url(#card2)"/><rect x="368" y="348" width="120" height="22" rx="11" fill="#fff" opacity=".35"/></g>
-  <rect x="200" y="424" width="624" height="372" rx="96" fill="url(#body)" stroke="#fff" stroke-opacity=".16" stroke-width="5"/>
-  <path d="M296 424h432" stroke="#fff" stroke-opacity=".22" stroke-width="5" stroke-linecap="round"/>
-  <rect x="580" y="530" width="276" height="160" rx="80" fill="#0b0b0d" stroke="#fff" stroke-opacity=".2" stroke-width="5"/>
-  <circle cx="660" cy="610" r="26" fill="#fff"/>
+  <rect width="1024" height="1024"  fill="url(#bg)"/>
+  <circle cx="512" cy="512" r="420" fill="url(#glow)"/>
+    <circle cx="512" cy="512" r="268" fill="none" stroke="url(#g-money)" stroke-width="120" stroke-linecap="round" stroke-dasharray="393.3 1683.9" transform="rotate(-72.04 512 512)"/>
+  <circle cx="512" cy="512" r="268" fill="none" stroke="url(#g-steps)" stroke-width="120" stroke-linecap="round" stroke-dasharray="393.3 1683.9" transform="rotate(47.96 512 512)"/>
+  <circle cx="512" cy="512" r="268" fill="none" stroke="url(#g-food)" stroke-width="120" stroke-linecap="round" stroke-dasharray="393.3 1683.9" transform="rotate(167.96 512 512)"/>
+  <circle cx="512" cy="512" r="74" fill="url(#dot)"/>
+  <circle cx="512" cy="512" r="74" fill="none" stroke="#000" stroke-opacity=".12" stroke-width="4"/>
 </svg>

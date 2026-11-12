@@ -1,7 +1,10 @@
-# Ledger
+# Balance
 
-A private money ledger for cash, UPI and cards. It runs in the browser as an installable phone app (PWA), keeps everything on the device, and needs no account, server or build step.
+Money, steps and food in one private app (formerly **Ledger**). It runs in the browser as an installable phone app (PWA), keeps everything on the device, and needs no account, server or build step. Inside it are three apps: **Ledger** for cash, UPI and cards, **Health** for Apple Watch steps with rewards and fines, and **Diet & food**.
 
+The logo is three arcs around a balance point: red for money, green for steps, amber for food. The source is `icons/icon-full.svg` (full-bleed, for the iPhone home screen and Android) and `icons/icon.svg` (rounded, for the favicon). The PNGs are rendered from the full-bleed SVG.
+
+The rename only changes what you see. Saved data keys (`ledger.v1`), backups and the web address (`/ledger/`) are unchanged, so existing data carries over.
 ## What it does
 
 Opening Ledger shows a launcher with three apps, each with today's headline: **Ledger** (money), **Health** (steps, with rewards and fines) and **Diet & food** (calories, macros, water). Tapping one opens just that app, with its own tabs. The back button, or the phone's back gesture, returns to the launcher. They share one set of data on the device, so steps and food still settle into the ledger balance every night.
