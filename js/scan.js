@@ -61,7 +61,7 @@ export async function barcodeFromPhoto(file) {
 
 /** Open Food Facts product for a barcode, or null when it isn't listed. Throws when offline. */
 export async function lookupBarcode(code) {
-  const fields = 'product_name,brands,quantity,nutriments,serving_size,serving_quantity';
+  const fields = 'product_name,brands,quantity,nutriments,serving_size,serving_quantity,ingredients_analysis_tags,allergens_tags';
   const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=${fields}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error('The food database didn’t answer. Try again in a moment.');

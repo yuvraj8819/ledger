@@ -5,6 +5,7 @@
 // Row: [name, serving label, grams (or ml), kcal, protein g, carbs g, fat g, fibre g, sugar g, sodium mg, aliases?]
 // More Indian food, Indo-Chinese, momos, vegetables, fruit, snacks and fast food are in foods_more.js.
 import { MORE } from './foods_more.js';
+import { MENUS } from './foods_menus.js';
 
 const DATA = {
   'Rice & biryani': ['Indian', [
@@ -196,7 +197,6 @@ const DATA = {
     ['Lay\'s Classic Salted', '1 pack', 52, 279, 3.4, 27, 17.6, 1.5, 0.3, 280, 'lays chips'],
     ['Lay\'s Magic Masala', '1 pack', 52, 278, 3.5, 27.6, 17, 1.6, 1.4, 360, 'lays chips'],
     ['Kurkure Masala Munch', '1 pack', 90, 500, 5.7, 54, 30, 1.5, 2.5, 880],
-    ['Haldiram\'s Aloo Bhujia', '50 g', 50, 290, 4.5, 20, 21.5, 2.5, 1, 450, 'namkeen haldirams'],
     ['Bingo Mad Angles', '50 g', 50, 260, 3.5, 30, 14, 1, 2, 400],
     ['Doritos Nacho Cheese', '50 g', 50, 250, 3.5, 30, 13, 1.5, 1.5, 320],
     ['Parle-G', '4 biscuits', 25, 113, 1.7, 19, 3.5, 0.3, 6.2, 60, 'parle g biscuit'],
@@ -400,34 +400,61 @@ const DATA = {
 // brand groups that are kinds of food, not companies: no brand name shown beside the food
 const GENERIC = ['Indian', 'Basics', 'Quick foods', 'Drinks', 'Momos', 'Indo-Chinese', 'Vegetables', 'Fruits', 'Dry fruits & nuts', 'Snacks', 'Fast food'];
 const slug = (s) => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-const mk = (group, brand, [name, label, g, kcal, p, c, f, fib, sug, na, aliases = ''], extra = {}) => ({
+// ---------- veg / egg / non-veg ----------
+export const DIETS = [['veg', 'Veg'], ['egg', 'Egg'], ['nonveg', 'Non-veg']];
+// 'chicken' and 'mutton' also catch brand-joined names like McChicken; the shorter words need to stand alone (ham ≠ hamburger)
+const NONVEG_RE = /chicken|mutton|\b(lamb|fish|prawns?|shrimp|pork|bacon|sausage|pepperoni|salami|tuna|beef|ham|crab|lobster|squid|non[- ]?veg)\b/i;
+const EGG_RE = /\b(eggs?|omelettes?|omelets?)\b|mcegg/i;
+const NONVEG_BRANDS = ['KFC']; // everything on the menu is meat unless it says veg
+/** 'veg', 'egg' or 'nonveg' from the name and brand, unless the row says so itself. */
+export function dietOf(name, brand, override) {
+  if (override) return override;
+  if (NONVEG_BRANDS.includes(brand) && !/\bveg\b/i.test(name)) return 'nonveg';
+  if (NONVEG_RE.test(name)) return 'nonveg';
+  if (EGG_RE.test(name)) return 'egg';
+  return 'veg';
+}
+const OVERRIDES = { 'Samyang Buldak noodles': 'nonveg', 'Keema Do Pyaza': 'nonveg', 'Keema paratha': 'nonveg', 'Keema naan': 'nonveg', 'Galouti kebab': 'nonveg', 'Shami kebab': 'nonveg' };
+/** Does a food pass the diet filter? Foods with no diet set (some scanned ones) always show. */
+export const dietOk = (food, diets) => !diets || !food.diet || diets.includes(food.diet);
+
+const mk = (group, brand, [name, label, g, kcal, p, c, f, fib, sug, na, aliases = '', diet], extra = {}) => ({
   id: `db:${slug(brand + ' ' + name + (extra.size || ''))}`, name: extra.name || name, brand: GENERIC.includes(brand) ? '' : brand,
   group, brandGroup: brand, aliases, serving: { label: extra.label || label, g: extra.g || g }, unit: brand === 'Drinks' || brand === 'Starbucks' || /\b(milk|lassi|chaas|kool|juice|soup|shake|coconut water|lemonade|jaljeera|panna|thandai|chai|coffee)\b/i.test(name) ? 'ml' : 'g',
-  n: { kcal, p, c, f, fib, sug, na }, source: 'db',
+  n: { kcal, p, c, f, fib, sug, na }, source: 'db', diet: dietOf(name, brand, diet || OVERRIDES[name]),
 });
 const times = (row, x) => { const r = row.slice(); for (const i of [2, 3, 4, 5, 6, 7, 8, 9]) r[i] = i === 3 || i === 9 || i === 2 ? Math.round(row[i] * x) : Math.round(row[i] * x * 10) / 10; return r; };
 
+const ALL = {};
+for (const src of [DATA, MORE, MENUS]) for (const [group, [brand, rows]] of Object.entries(src)) {
+  if (ALL[group]) ALL[group][1] = ALL[group][1].concat(rows); else ALL[group] = [brand, rows.slice()];
+}
+
 export const FOODS = [];
-for (const [group, [brand, rows]] of Object.entries({ ...DATA, ...MORE })) {
+for (const [group, [brand, rows]] of Object.entries(ALL)) {
   for (const row of rows) {
     FOODS.push(mk(group, brand, row));
     // a footlong is two 6-inch subs; a medium Domino's pizza is about twice a regular, a large about 3.4×
     if (brand === 'Subway' && row[1] === '6-inch') FOODS.push(mk(group, brand, times(row, 2), { label: 'Footlong', size: ' footlong', name: row[0] }));
+    if (brand === 'Pizza Hut' && row[1] === 'Personal') {
+      FOODS.push(mk(group, brand, times(row, 2.2), { label: 'Medium (8 slices)', size: ' medium' }));
+      FOODS.push(mk(group, brand, times(row, 3.8), { label: 'Large (8 big slices)', size: ' large' }));
+    }
     if (brand === "Domino's" && row[1] === 'Regular (4 slices)') {
       FOODS.push(mk(group, brand, times(row, 2), { label: 'Medium (6 slices)', size: ' medium' }));
       FOODS.push(mk(group, brand, times(row, 3.4), { label: 'Large (8 slices)', size: ' large' }));
     }
   }
 }
-export const BRAND_GROUPS = [...new Set(Object.values({ ...DATA, ...MORE }).map(([b]) => b))];
+export const BRAND_GROUPS = [...new Set(Object.values(ALL).map(([b]) => b))];
 
 const norm = (s) => String(s || '').toLowerCase().normalize('NFKD').replace(/[’'`]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 const SYN = { maggie: 'maggi', daal: 'dal', chawal: 'rice', roti: 'roti chapati', dominos: 'dominos', mcd: 'mcdonalds', burrito: 'burrito' };
 
 /** Ranked search over built-in foods and your own. Every word you type has to match somewhere. */
-export function searchFoods(query, mine = [], { limit = 40, brandGroup = null } = {}) {
+export function searchFoods(query, mine = [], { limit = 40, brandGroup = null, diets = null } = {}) {
   const words = norm(query).split(' ').filter(Boolean).map((w) => SYN[w] || w);
-  const pool = [...mine, ...FOODS].filter((f) => !brandGroup || f.brandGroup === brandGroup || (brandGroup === 'Mine' && f.source !== 'db'));
+  const pool = [...mine, ...FOODS].filter((f) => dietOk(f, diets) && (!brandGroup || f.brandGroup === brandGroup || (brandGroup === 'Mine' && f.source !== 'db')));
   if (!words.length) return pool.slice(0, brandGroup ? 900 : limit);
   const scored = [];
   for (const [i, f] of pool.entries()) {

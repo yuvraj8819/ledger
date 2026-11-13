@@ -386,6 +386,44 @@ test('foods: groups are browsable', () => {
   }
 });
 
+// ---------- diet filter and new menus (2.2) ----------
+test('diet tags come from the name and brand', () => {
+  const d = (q) => F.searchFoods(q)[0]?.diet;
+  eq(d('dal tadka restaurant'), 'veg'); eq(d('omelette'), 'egg'); eq(d('butter chicken'), 'nonveg'); eq(d('filet fish'), 'nonveg');
+  eq(F.dietOf('Zinger Burger', 'KFC'), 'nonveg'); eq(F.dietOf('Veg Zinger Burger', 'KFC'), 'veg');
+  eq(F.dietOf('Chicken & Egg Wrap', 'Faasos'), 'nonveg'); eq(F.dietOf('Egg Paneer Wrap', 'Faasos'), 'egg'); eq(F.dietOf('Soya Chaap Masala', 'Indian'), 'veg');
+  eq(F.dietOf('Mystery', 'Indian', 'egg'), 'egg');
+  eq(F.dietOf('McChicken Burger', "McDonald's"), 'nonveg'); eq(F.dietOf('McEgg Burger', "McDonald's"), 'egg'); eq(F.dietOf('Chickpea salad', 'Indian'), 'veg'); eq(F.dietOf('Hamburger bun', 'Indian'), 'veg');
+  eq(F.FOODS.find((f) => f.name === 'Keema paratha').diet, 'nonveg');
+});
+test('diet filter: veg only, veg + egg, egg + non-veg, all', () => {
+  const kinds = (diets, q = 'wrap') => new Set(F.searchFoods(q, [], { limit: 500, diets }).map((f) => f.diet));
+  eq([...kinds(['veg'])].sort(), ['veg']); eq([...kinds(['veg', 'egg'])].sort(), ['egg', 'veg']);
+  eq([...kinds(['egg', 'nonveg'])].sort(), ['egg', 'nonveg']); eq([...kinds(['veg', 'egg', 'nonveg'])].sort(), ['egg', 'nonveg', 'veg']);
+  eq(F.searchFoods('chicken', [], { limit: 50, diets: ['veg'] }).length, 0, 'no chicken in veg mode');
+  eq(F.searchFoods('', [], { brandGroup: 'Faasos', diets: ['veg'] }).every((f) => f.diet === 'veg'), true);
+});
+test('foods with no diet set always show; your own foods are filtered by their diet', () => {
+  const mine = [{ id: 'my:1', name: 'Mystery bar', n: { kcal: 100 }, serving: { label: '1', g: 10 }, source: 'hand' }, { id: 'my:2', name: 'Mystery egg thing', n: { kcal: 100 }, serving: { label: '1', g: 10 }, source: 'hand', diet: 'egg' }];
+  eq(F.searchFoods('mystery', mine, { diets: ['veg'] }).map((f) => f.id), ['my:1']); eq(F.searchFoods('mystery', mine, { diets: ['egg'] }).length, 2);
+});
+test('new menus: Haldiram\'s, Faasos, chaap, oils, bigger chains', () => {
+  const has = (q, n = 1) => { if (F.searchFoods(q, [], { limit: 500 }).length < n) throw new Error(`"${q}" found fewer than ${n}`); };
+  has('haldirams', 60); has('faasos', 35); has('malai chaap'); has('afghani chaap'); has('veerji'); has('chilli mushroom', 2); has('olive oil'); has('mustard oil');
+  has('sunflower oil'); has('coconut oil'); has('groundnut oil'); has('rice bran oil'); has('veg biryani', 3); has('raj kachori'); has('aloo bhujia');
+  eq(F.FOODS.filter((f) => f.brandGroup === 'Pizza Hut').length >= 55, true, 'Pizza Hut menu with sizes');
+  eq(F.FOODS.some((f) => f.brandGroup === 'Pizza Hut' && f.serving.label.startsWith('Medium')), true);
+  eq(F.FOODS.filter((f) => f.brandGroup === "McDonald's").length >= 45, true); eq(F.FOODS.filter((f) => f.brandGroup === 'Taco Bell').length >= 30, true);
+  eq(F.FOODS.filter((f) => f.brandGroup === 'Subway' && /wrap|salad/i.test(f.name)).length >= 25, true, 'Subway Indian wraps and salads');
+  eq(F.FOODS.find((f) => f.name === 'Olive Oil (extra virgin)').n.kcal, 125);
+  eq(F.FOODS.filter((f) => /^Haldiram/.test(f.name)).length, 0, 'no stray Haldiram rows outside the group');
+});
+test('barcode products carry a diet from their ingredients', () => {
+  const p = (tags, allergens = []) => N.offToFood('1', { product_name: 'X', nutriments: { 'energy-kcal_100g': 100 }, ingredients_analysis_tags: tags, allergens_tags: allergens });
+  eq(p(['en:vegetarian', 'en:vegan']).diet, 'veg'); eq(p(['en:vegetarian'], ['en:eggs']).diet, 'egg'); eq(p(['en:non-vegetarian']).diet, 'nonveg'); eq(p(['en:maybe-vegetarian']).diet, undefined);
+});
+test('new health data defaults to every diet on', () => { const h = H.defaultHealth(); eq(h.diet, ['veg', 'egg', 'nonveg']); });
+
 const failed = results.filter((r) => !r[1]);
 document.getElementById('sum').innerHTML = failed.length ? `<span class="bad">${failed.length} of ${results.length} failed</span>` : `<span class="ok">All ${results.length} tests passed</span>`;
 document.getElementById('out').innerHTML = results.map(([n, ok, m]) => `<div class="${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'} ${n}${m ? ' — ' + m : ''}</div>`).join('');

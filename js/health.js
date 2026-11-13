@@ -24,6 +24,7 @@ export function defaultHealth() {
     method: 'upi',           // 'upi' moves the bank balance, 'cash' moves cash in hand
     accountId: null,         // bucket the money lands in (first account if empty)
     profile: null,           // { sex, age, heightCm, weightKg, bodyFat, activity, goal, pace }
+    diet: ['veg', 'egg', 'nonveg'], // which kinds of food the picker shows
     autoGoal: true,          // calorie goal follows the target from the profile
     weights: [],             // [{ date, kg }]
     foods: [],               // your scanned / label / hand-made foods

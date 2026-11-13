@@ -55,7 +55,9 @@ A day with no step count waits. So does a count taken before 11:30 PM that's und
 ### Food: targets, search, barcodes and labels
 
 - **Body & goal** (first thing in setup): sex, age, height, weight, optional body fat, activity and goal. Ledger works out maintenance (Katch-McArdle with body fat, Mifflin-St Jeor without), a daily target, protein / carbs / fat, fibre, a sugar cap and water. Safety limits: never below your resting burn, weight loss capped at 1% of body weight a week, and under 18 at 0.5% (max 0.5 kg) with carbs held at 130 g or more and no adult BMI label. The target becomes the calorie goal for the overeating rule, and logging a new weight updates it.
-- **Built-in foods** (`js/foods.js` and `js/foods_more.js`, about 1,000): browse by group or search by name, Hindi name or dish type.
+- **Built-in foods** (`js/foods.js`, `js/foods_more.js` and `js/foods_menus.js`, about 1,360): browse by group or search by name, Hindi name or dish type.
+- **Veg / egg / non-veg filter**: three toggles in the food picker (Veg, Egg, Non-veg) that you can combine any way, such as veg only, veg + egg, or egg + non-veg. At least one stays on, and your choice is remembered. Each food carries the usual green, amber or red mark. Diet is worked out from the name and brand (`dietOf` in `js/foods.js`, with a few overrides), scanned products take it from Open Food Facts' ingredient analysis, and foods you add yourself have their own Diet picker. Foods with no diet set always show.
+- **Menus** (added in 2.2): Haldiram's (namkeen, sweets, ready-to-eat, restaurant dishes), Faasos wraps, bowls and biryani, chaap, kebabs and casual veg starters, all the cooking oils, and much bigger Subway (Indian subs, wraps, salads), Pizza Hut (with sizes), Domino's, McDonald's and Taco Bell menus. These are estimates, not official nutrition sheets.
   - **Indian:** rice and biryani, dal, rajma, chole, kadhi (with and without pakoda), sabzi and paneer dishes, non-veg curries and kebabs, rotis and breads (jowar, bajra, makki, missi, kulcha, naan), breakfast (besan, moong and oats chilla, dosa and idli varieties, thepla, parathas, poha and upma), chaat and street food, sweets and desserts.
   - **Momos:** steamed, fried, pan-fried, kurkure, tandoori, afghani, peri peri, schezwan, chilli and jhol, in veg, chicken and paneer, plus chutney and mayo dips.
   - **WOW! Momo:** its momo formats, MoBurgs, chocolate momo, and the Wow! China noodles, rice, starters, soups and drinks. WOW! doesn't publish a complete menu with nutrition, so these are the formats its outlets list, with estimated numbers.
@@ -147,6 +149,7 @@ js/calc.js            pure money logic, no DOM; everything the tests cover
 js/nutrition.js       targets from body & goal, scaling foods, label text and barcode results (pure, tested)
 js/foods.js           built-in food list and search
 js/foods_more.js      about 600 more foods: Indian, Indo-Chinese, momos, vegetables, fruits, snacks, fast food
+js/foods_menus.js     Haldiram's, Faasos, chaap and casual veg, oils, and the bigger chain menus (rows list diet only when the name doesn't say)
 js/scan.js            camera barcode scanning, Open Food Facts lookup, label OCR
 js/health.js          steps + food rules: verdicts, settling into entries, step parsing (pure, tested)
 js/store.js           saved data shape, localStorage, snapshots, backups, PIN hashing, demo data

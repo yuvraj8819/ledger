@@ -639,3 +639,15 @@ textarea.input { min-height: 88px; resize: vertical; font: 14px/1.4 ui-monospace
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- v2.2 diet filter and marks ---------- */
+.diet-bar { display: flex; gap: 8px; margin-top: 12px; }
+.dchip { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 8px; border-radius: 99px;
+  border: 1px solid var(--g-brd); background: var(--g-bg); color: var(--ink-2); font-size: 13.5px; font-weight: 650; transition: transform .3s var(--spring), background-color .2s, color .2s, border-color .2s; }
+.dchip:active { transform: scale(.95); }
+.dchip.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+/* the Indian food-packet marks: a square with a dot, green for veg, amber for egg, red for non-veg */
+.dm { display: inline-block; position: relative; flex: none; width: 13px; height: 13px; border: 1.5px solid; border-radius: 3px; vertical-align: -2px; }
+.dm::after { content: ""; position: absolute; inset: 2.5px; border-radius: 50%; background: currentColor; }
+.dm-veg { color: #1fa463; } .dm-egg { color: #e5a00d; } .dm-nonveg { color: #d9382d; }
+.row .t .dm { margin-right: 7px; }

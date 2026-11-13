@@ -1278,7 +1278,7 @@ function mealsView() {
   ${h.recipes.length ? `<div class="list">${h.recipes.map((r) => { const f = recipeFood(r); return `<div class="row" style="cursor:default"><div class="ic">🥘</div><div class="mid"><div class="t">${esc(r.name)}</div><div class="s">${kcal(f.n.kcal)} a serving · ${r.items.length} item${r.items.length === 1 ? '' : 's'}</div></div><button class="btn sm ghost" data-act="h-edit-meal" data-id="${r.id}">Edit</button><button class="btn sm accent" data-act="h-log-meal" data-id="${r.id}">Log</button></div>`; }).join('')}</div>`
     : '<div class="empty"><b>No meals yet</b>Build a dish you make often, like fried rice, from its ingredients. Then log it in one tap.</div>'}
   <div class="section-head"><h2>Your foods</h2><span class="faint" style="font-size:12.5px">${h.foods.length}</span></div>
-  ${h.foods.length ? `<div class="list">${h.foods.slice().reverse().map((f) => `<div class="row" style="cursor:default"><div class="ic">${f.source === 'scanned' ? '▥' : f.source === 'label' ? '📷' : '✎'}</div><div class="mid"><div class="t">${esc(f.name)}</div><div class="s">${esc([f.brand, src[f.source], `${f.n.kcal} kcal per ${f.serving.label}`].filter(Boolean).join(' · '))}</div></div><button class="btn sm ghost" data-act="h-log-food" data-id="${f.id}">Log</button><button class="btn sm danger" data-act="h-del-food" data-id="${f.id}" aria-label="Delete">${I.trash}</button></div>`).join('')}</div>`
+  ${h.foods.length ? `<div class="list">${h.foods.slice().reverse().map((f) => `<div class="row" style="cursor:default"><div class="ic">${f.source === 'scanned' ? '▥' : f.source === 'label' ? '📷' : '✎'}</div><div class="mid"><div class="t">${dietMark(f.diet)}${esc(f.name)}</div><div class="s">${esc([f.brand, src[f.source], `${f.n.kcal} kcal per ${f.serving.label}`].filter(Boolean).join(' · '))}</div></div><button class="btn sm ghost" data-act="h-log-food" data-id="${f.id}">Log</button><button class="btn sm danger" data-act="h-del-food" data-id="${f.id}" aria-label="Delete">${I.trash}</button></div>`).join('')}</div>`
     : '<div class="empty"><b>Nothing scanned yet</b>Barcodes you scan and labels you read are kept here.</div>'}
   <div class="h-btns" style="margin-top:16px"><button class="btn ghost" data-act="h-food">${I.search} Browse ${F.FOODS.length} built-in foods</button></div>`;
 }
@@ -1471,11 +1471,18 @@ document.addEventListener('click', (ev) => {
 const TG = () => N.targets(state.health.profile);
 const myFoods = () => state.health.foods;
 const g1 = (x) => (x == null ? '—' : Math.round(x * 10) / 10);
+const dietSel = () => { const d = state.health.diet; return Array.isArray(d) && d.length ? d : ['veg', 'egg', 'nonveg']; };
+const byDiet = (foods) => foods.filter((f) => F.dietOk(f, dietSel()));
+const DIET_NAME = { veg: 'Vegetarian', egg: 'Contains egg', nonveg: 'Non-vegetarian' };
+const dietMark = (d) => (d ? `<i class="dm dm-${d}" title="${DIET_NAME[d]}" aria-label="${DIET_NAME[d]}"></i>` : '');
 const recipeFood = (r) => {
   const t = N.totals(r.items); const k = Math.max(1, Number(r.servings) || 1);
   const n = {}; for (const [key] of N.NUTRIENTS) n[key] = key === 'kcal' || key === 'na' ? Math.round(t[key] / k) : Math.round((t[key] / k) * 10) / 10;
   const grams = r.items.reduce((s, i) => s + (Number(i.g) || 0), 0);
-  return { id: `rec:${r.id}`, name: r.name, brand: '', source: 'recipe', recipeId: r.id, serving: { label: '1 serving', g: grams ? Math.round(grams / k) : null }, n, count: r.items.length };
+  // a meal is as non-veg as its most non-veg ingredient
+  const ds = r.items.map((i) => (i.ref ? anyFood(i.ref)?.diet : null)).filter(Boolean);
+  const diet = ds.includes('nonveg') ? 'nonveg' : ds.includes('egg') ? 'egg' : ds.length ? 'veg' : null;
+  return { id: `rec:${r.id}`, name: r.name, brand: '', source: 'recipe', recipeId: r.id, diet, serving: { label: '1 serving', g: grams ? Math.round(grams / k) : null }, n, count: r.items.length };
 };
 const anyFood = (id) => (id?.startsWith('rec:') ? (() => { const r = state.health.recipes.find((x) => `rec:${x.id}` === id); return r ? recipeFood(r) : null; })() : F.foodById(id, myFoods()));
 
@@ -1721,16 +1728,17 @@ const FIRST_GROUPS = ['Indian', 'Momos', 'WOW! Momo', 'Indo-Chinese', 'Vegetable
 function pickFood({ day, mode = 'log', onPick } = {}) {
   let q = '', brand = null;
   const lf = loggedFoods();
-  const row = (f) => `<button class="row" data-pick-food="${esc(f.id)}"><div class="ic">${f.source === 'recipe' ? '🥘' : f.source === 'scanned' ? '▥' : f.source === 'label' ? '📷' : f.source === 'hand' ? '✎' : '🍽️'}</div><div class="mid"><div class="t">${esc(f.name)}</div><div class="s">${esc([f.brand, f.serving?.label, f.count ? `${f.count} items` : ''].filter(Boolean).join(' · '))}</div></div><div class="amt">${f.n?.kcal != null ? kcal(f.n.kcal) : ''}</div></button>`;
+  const row = (f) => `<button class="row" data-pick-food="${esc(f.id)}"><div class="ic">${f.source === 'recipe' ? '🥘' : f.source === 'scanned' ? '▥' : f.source === 'label' ? '📷' : f.source === 'hand' ? '✎' : '🍽️'}</div><div class="mid"><div class="t">${dietMark(f.diet)}${esc(f.name)}</div><div class="s">${esc([f.brand, f.serving?.label, f.count ? `${f.count} items` : ''].filter(Boolean).join(' · '))}</div></div><div class="amt">${f.n?.kcal != null ? kcal(f.n.kcal) : ''}</div></button>`;
+  const dietBar = () => `<div class="diet-bar" role="group" aria-label="Diet filter">${F.DIETS.map(([k, l]) => `<button class="dchip ${dietSel().includes(k) ? 'on' : ''}" data-diet="${k}" aria-pressed="${dietSel().includes(k)}"><i class="dm dm-${k}"></i>${l}</button>`).join('')}</div>`;
   const pool = new Map();
-  const list = (title, foods, extra = '') => { foods.forEach((f) => pool.set(f.id, f)); return foods.length ? `<div class="section-head"><h2>${title}</h2>${extra}</div><div class="list">${foods.map(row).join('')}</div>` : ''; };
+  const list = (title, foods, extra = '') => { foods = byDiet(foods); foods.forEach((f) => pool.set(f.id, f)); return foods.length ? `<div class="section-head"><h2>${title}</h2>${extra}</div><div class="list">${foods.map(row).join('')}</div>` : ''; };
   const content = () => {
     pool.clear();
     if (q || brand) {
-      const res = F.searchFoods(q, [...myFoods(), ...state.health.recipes.map(recipeFood)], { brandGroup: brand, limit: 60 });
+      const res = F.searchFoods(q, [...myFoods(), ...state.health.recipes.map(recipeFood)], { brandGroup: brand, limit: 60, diets: dietSel() });
       res.forEach((f) => pool.set(f.id, f));
       return `${brand ? `<div class="chips" style="margin-top:12px"><button class="chip on" data-brand="">${esc(brand === 'Mine' ? 'Your foods' : brand)} ✕</button></div>` : ''}
-        ${res.length ? `<div class="list" style="margin-top:12px">${res.map(row).join('')}</div>` : `<div class="empty"><b>Nothing called “${esc(q)}”</b>Scan its barcode, read the label, or add it by hand.</div>`}
+        ${res.length ? `<div class="list" style="margin-top:12px">${res.map(row).join('')}</div>` : `<div class="empty"><b>${q ? `Nothing called “${esc(q)}”` : 'Nothing here'}</b>${dietSel().length < 3 ? 'Your diet filter is hiding some foods. Turn on Egg or Non-veg above to see more. ' : ''}Scan its barcode, read the label, or add it by hand.</div>`}
         <div class="h-btns"><button class="btn ghost" data-fp="create">${I.edit} Add “${esc(q || 'a food')}” by hand</button></div>`;
     }
     const recipes = state.health.recipes.map(recipeFood);
@@ -1744,6 +1752,7 @@ function pickFood({ day, mode = 'log', onPick } = {}) {
   };
   const sh = openSheet(mode === 'build' ? 'Add to meal' : `Add food · ${fmtDay(day)}`, `
     <div class="search-box">${I.search}<input id="fp-q" placeholder="Search: dal tadka, Maggi, Farmhouse…" autocomplete="off" autocapitalize="off"></div>
+    ${dietBar()}
     ${mode === 'log' ? `<div class="qas" style="margin-top:12px"><button class="qa" data-fp="scan">${I.barcode}<span>Scan</span></button><button class="qa" data-fp="label">${I.camera}<span>Label</span></button><button class="qa" data-fp="create">${I.edit}<span>By hand</span></button><button class="qa" data-fp="quick">${I.bolt}<span>Quick</span></button></div>` : ''}
     <div id="fp-res">${content()}</div>`);
   const inp = $('#fp-q', sh), out = $('#fp-res', sh);
@@ -1751,6 +1760,14 @@ function pickFood({ day, mode = 'log', onPick } = {}) {
   inp.addEventListener('input', () => { q = inp.value.trim(); out.innerHTML = content(); });
   const done = (food) => amountSheet(food, { day, mode, onPick });
   sh.addEventListener('click', (ev) => {
+    const dt = ev.target.closest('[data-diet]');
+    if (dt) {
+      const k = dt.dataset.diet; let cur = dietSel().slice();
+      if (cur.includes(k)) { if (cur.length === 1) return toast('Keep at least one on'); cur = cur.filter((x) => x !== k); } else cur.push(k);
+      state.health.diet = cur; S.save(state);
+      $$('[data-diet]', sh).forEach((b) => { const on = cur.includes(b.dataset.diet); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+      out.innerHTML = content(); return;
+    }
     const b = ev.target.closest('[data-brand]');
     if (b) { brand = b.dataset.brand || null; out.innerHTML = content(); sh.scrollTop = 0; return; }
     const pf = ev.target.closest('[data-pick-food]');
@@ -1824,12 +1841,13 @@ function amountSheet(food, { day, mode = 'log', onPick, existing } = {}) {
 
 // ---------------------------------------------------------------- your own foods
 function createFoodSheet(pre = {}, { onSaved, note } = {}) {
-  const f = { name: pre.name || '', brand: pre.brand || '', per: pre.per || '100', servingG: pre.servingG || '', barcode: pre.barcode || '', source: pre.source || 'hand', n: { ...(pre.n || {}) } };
+  const f = { name: pre.name || '', brand: pre.brand || '', diet: pre.diet || null, per: pre.per || '100', servingG: pre.servingG || '', barcode: pre.barcode || '', source: pre.source || 'hand', n: { ...(pre.n || {}) } };
   const nf = ([k, l, u]) => `<div><label class="eyebrow" for="cf-${k}">${l}</label><div class="amount-box" style="margin-top:6px"><input id="cf-${k}" class="num" inputmode="decimal" value="${f.n[k] ?? ''}" placeholder="—" style="font-size:19px"><span class="faint" style="font-size:13px;padding-right:6px">${u}</span></div></div>`;
   const sh = openSheet(pre.barcode ? 'Add this product' : 'Add a food', `
     ${note ? `<p class="lead" style="margin-top:0">${note}</p>` : ''}
     <div class="field" style="margin-top:0"><label class="eyebrow" for="cf-name">Name</label><input class="input" id="cf-name" value="${esc(f.name)}" placeholder="Paneer wrap from canteen"></div>
     <div class="field"><label class="eyebrow" for="cf-brand">Brand <span class="faint">optional</span></label><input class="input" id="cf-brand" value="${esc(f.brand)}"></div>
+    <div class="field"><div class="eyebrow label">Diet <span class="faint">optional</span></div><div class="diet-bar" style="margin-top:8px">${F.DIETS.map(([k, l]) => `<button class="dchip ${f.diet === k ? 'on' : ''}" data-cfdiet="${k}"><i class="dm dm-${k}"></i>${l}</button>`).join('')}</div></div>
     <div class="field"><div class="eyebrow label">The numbers are per</div><div class="seg"><button class="${f.per === '100' ? 'on' : ''}" data-per="100">100 g / ml</button><button class="${f.per === 'serving' ? 'on' : ''}" data-per="serving">1 serving</button></div>
       <div class="amount-box" id="cf-sbox" style="margin-top:10px;${f.per === 'serving' ? '' : 'display:none'}"><input id="cf-sg" class="num" inputmode="decimal" value="${f.servingG}" placeholder="Serving size" style="font-size:19px"><span class="faint" style="font-size:13px;padding-right:6px">g in a serving</span></div></div>
     <div class="nf-grid">${N.NUTRIENTS.map(nf).join('')}</div>
@@ -1837,6 +1855,8 @@ function createFoodSheet(pre = {}, { onSaved, note } = {}) {
     <div class="btn-row">${!pre.fromLabel ? `<button class="btn ghost" data-cf-label style="flex:0 0 auto;width:auto;padding:16px 16px">${I.camera} Read label</button>` : ''}<button class="btn accent" data-cf-save>Save food</button></div>`);
   if (FINE && !f.name) setTimeout(() => $('#cf-name', sh)?.focus(), 300);
   sh.addEventListener('click', async (ev) => {
+    const dd = ev.target.closest('[data-cfdiet]');
+    if (dd) { f.diet = f.diet === dd.dataset.cfdiet ? null : dd.dataset.cfdiet; $$('[data-cfdiet]', sh).forEach((b) => b.classList.toggle('on', b.dataset.cfdiet === f.diet)); return; }
     const p = ev.target.closest('[data-per]');
     if (p) { f.per = p.dataset.per; $$('[data-per]', sh).forEach((b) => b.classList.toggle('on', b === p)); $('#cf-sbox', sh).style.display = f.per === 'serving' ? '' : 'none'; return; }
     if (ev.target.closest('[data-cf-label]')) {
@@ -1853,7 +1873,7 @@ function createFoodSheet(pre = {}, { onSaved, note } = {}) {
     if (n.kcal == null) return warn('Calories are needed');
     const sg = Number($('#cf-sg', sh).value) || null;
     if (f.per === 'serving' && !sg) return warn('How many grams in a serving?');
-    const food = { id: `my:${S.uid()}`, name, brand: $('#cf-brand', sh).value.trim(), source: f.source, barcode: f.barcode || undefined, serving: f.per === '100' ? { label: '100 g', g: 100 } : { label: `1 serving (${sg} g)`, g: sg }, n, usualG: pre.usualG || (f.per === 'serving' ? sg : null) };
+    const food = { id: `my:${S.uid()}`, name, brand: $('#cf-brand', sh).value.trim(), diet: f.diet || undefined, source: f.source, barcode: f.barcode || undefined, serving: f.per === '100' ? { label: '100 g', g: 100 } : { label: `1 serving (${sg} g)`, g: sg }, n, usualG: pre.usualG || (f.per === 'serving' ? sg : null) };
     const h = state.health;
     if (food.barcode) h.foods = h.foods.filter((x) => x.barcode !== food.barcode);
     h.foods.push(food); S.save(state);

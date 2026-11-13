@@ -243,10 +243,14 @@ export function offToFood(code, product) {
   const num = (x) => (x == null || Number.isNaN(Number(x)) ? null : Number(x));
   const n = { kcal: Math.round(kcal), p: num(v('proteins')), c: num(v('carbohydrates')), f: num(v('fat')), fib: num(v('fiber')), sug: num(v('sugars')), na: sodium == null ? null : Math.round(sodium) };
   for (const k of ['p', 'c', 'f', 'fib', 'sug']) if (n[k] != null) n[k] = r1(n[k]);
+  // Open Food Facts reads the ingredients: vegetarian/vegan products are veg, or egg if eggs are listed as an allergen
+  const tags = product.ingredients_analysis_tags || [];
+  const diet = tags.includes('en:non-vegetarian') ? 'nonveg'
+    : tags.includes('en:vegetarian') || tags.includes('en:vegan') ? ((product.allergens_tags || []).includes('en:eggs') ? 'egg' : 'veg') : undefined;
   const sq = Number(product.serving_quantity) || null;
   return {
     name: (([product.product_name, /^\d+(\.\d+)?$/.test(String(product.quantity || '')) ? `${product.quantity} g` : product.quantity].filter(Boolean).join(' ').trim() || `Barcode ${code}`).replace(/^./, (c) => c.toUpperCase())),
-    brand: (product.brands || '').split(',')[0].trim(), barcode: code, source: 'scanned',
+    brand: (product.brands || '').split(',')[0].trim(), barcode: code, source: 'scanned', diet,
     serving: { label: '100 g', g: 100 }, n, usualG: sq && sq < 2000 ? sq : null, servingText: product.serving_size || '',
   };
 }
