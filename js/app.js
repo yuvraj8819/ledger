@@ -36,6 +36,12 @@ const appOf = (tab) => TAB_APP[tab] || null;
 // a link straight to a tab (or a steps link) opens it; otherwise start on the launcher
 if (!TABS.includes(ui.tab)) ui.tab = null;
 
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+/** The theme to draw: 'auto' follows the phone's light/dark setting. */
+const themeOf = (s) => (s.theme === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : s.theme === 'light' ? 'light' : 'dark');
+/** An amount field's value in paise. Reads "1,200", "₹500/-", "1.5k", "120+80"; anything unreadable is 0. */
+const amtOf = (v) => { const n = C.parseAmount(v); return Number.isFinite(n) ? n : 0; };
+
 let lastBalance = null; // to hear when money moves
 function commit(msg, sound = 'success') {
   S.save(state);
@@ -44,7 +50,34 @@ function commit(msg, sound = 'success') {
   render();
   if (msg) toast(msg);
   const moved = balanceSound();
-  if (moved) X.play(moved); else if (msg) X.play(sound);
+  if (moved) { X.play(moved); moneyMoment(moved); } else if (msg) X.play(sound);
+}
+/** Swap in a whole new set of data (restore, demo, erase) without the "money moved" sound and coin firing. */
+function swapState(next) { state = next; lastBalance = C.balances(state).total; ui.lastTotal = null; ui.hday = null; }
+/**
+ * The moment money moves: a coin travels in an arc between the + button and the balance, and the
+ * balance figure bumps as it lands (or as it leaves). Only when the balance is on screen.
+ */
+function moneyMoment(dir) {
+  const target = $('#total-num')?.closest('.total') || $('.c-ledger .app-big');
+  if (!target || reducedMotion() || document.hidden) return;
+  const tr = target.getBoundingClientRect();
+  if (tr.bottom < 0 || tr.top > innerHeight) return;
+  const fab = $('.fab')?.getBoundingClientRect();
+  const low = fab ? { x: fab.left + fab.width / 2, y: fab.top + fab.height / 2 } : { x: innerWidth - 60, y: innerHeight - 120 };
+  const high = { x: tr.left + Math.min(tr.width, 150) / 2, y: tr.top + tr.height / 2 };
+  const coming = dir === 'coinIn';
+  const [a, b] = coming ? [low, high] : [high, low];
+  const coin = document.createElement('i'); coin.className = `coin ${coming ? 'in' : 'out'}`;
+  const dot = document.createElement('b'); coin.append(dot); document.body.append(coin);
+  const ms = 480;
+  // x moves steadily while y eases, so the path bends into an arc instead of a straight line
+  coin.animate([{ transform: `translateX(${a.x}px)` }, { transform: `translateX(${b.x}px)` }], { duration: ms, easing: 'linear', fill: 'forwards' });
+  dot.animate([{ transform: `translateY(${a.y}px) scale(.5)`, opacity: 0 }, { opacity: 1, offset: 0.2 }, { transform: `translateY(${b.y}px) scale(1)`, opacity: coming ? 1 : 0 }],
+    { duration: ms, easing: coming ? 'cubic-bezier(.15, .75, .3, 1)' : 'cubic-bezier(.6, 0, .9, .4)', fill: 'forwards' });
+  const bump = () => { target.classList.remove('bump-in', 'bump-out'); void target.offsetWidth; target.classList.add(coming ? 'bump-in' : 'bump-out'); };
+  if (coming) setTimeout(bump, ms - 60); else bump();
+  setTimeout(() => coin.remove(), ms + 80);
 }
 /** 'coinIn' / 'coinOut' if the total balance changed since the last look, else null. */
 function balanceSound() {
@@ -158,23 +191,23 @@ function groupedList(entries, { showDayTotal = true } = {}) {
 // ================================================================ shell
 function topbar() {
   const s = state.settings;
-  const a = APPS[appOf(ui.tab)];
+  const app = appOf(ui.tab);
+  const a = APPS[app];
   return `<header class="topbar">
-    ${a ? `<div class="brand with-back"><button class="icon-btn back" data-act="go-apps" aria-label="All apps">${I.back}</button><div><h1>${esc(a.name)}</h1><p>${esc(a.sub)}</p></div></div>`
-    : `<div class="brand"><h1>Balance</h1><p>Money · Health · Food</p></div>`}
+    ${a ? `<div class="brand with-back"><button class="icon-btn back" data-act="go-apps" aria-label="All apps">${I.back}</button><h1>${esc(a.name)}</h1></div>`
+    : `<div class="brand"><h1>Balance</h1></div>`}
     <div class="top-actions">
-      ${appOf(ui.tab) === 'ledger' ? `<button class="icon-btn" data-act="search" aria-label="Search">${I.search}</button>` : ''}
+      ${app === 'ledger' ? `<button class="icon-btn" data-act="search" aria-label="Search">${I.search}</button>` : ''}
       <button class="icon-btn ${s.hideAmounts ? 'on' : ''}" data-act="toggle-hide" aria-label="${s.hideAmounts ? 'Show amounts' : 'Hide amounts'}">${s.hideAmounts ? I.eyeOff : I.eye}</button>
       <button class="icon-btn ${s.pinHash ? '' : 'dim'}" data-act="lock-now" aria-label="${s.pinHash ? 'Lock now' : 'Set a passcode'}">${I.lock}</button>
-      <button class="icon-btn" data-act="toggle-theme" aria-label="Switch theme">${I.theme}</button>
+      ${a ? '' : `<button class="icon-btn" data-act="open-settings" aria-label="Settings">${I.settings}</button>`}
     </div></header>`;
 }
 function tabbar(app) {
   const tabs = APPS[app].tabs;
   const t = ([id, label, icon]) => `<button class="tab ${ui.tab === id ? 'on' : ''}" data-act="tab" data-tab="${id}" aria-label="${label}">${I[icon]}<span>${label}</span></button>`;
   return `<nav class="tabbar" data-app="${app}" style="--n:${tabs.length}"><i class="ind" style="--i:${tabs.findIndex((x) => x[0] === ui.tab)}"></i>${tabs.map(t).join('')}</nav>
-    ${app !== 'health' ? `<button class="fab" data-act="new-entry" aria-label="${app === 'food' ? 'Add food' : 'New entry'}">${I.plus}</button>` : ''}
-    ${app === 'ledger' ? '<button class="calc-fab" data-act="calc" aria-label="Calculator">=</button>' : ''}`;
+    ${app !== 'health' ? `<button class="fab" data-act="new-entry" aria-label="${app === 'food' ? 'Add food' : 'New entry'}">${I.plus}</button>` : ''}`;
 }
 
 /** The tab bar and floating buttons are built once per app; later renders only move the highlight.
@@ -193,7 +226,7 @@ function openTab(tab, { push = false } = {}) {
   if (appOf(tab) !== appOf(ui.tab) || tab === 'health' || tab === 'food') ui.hday = null;
   if (!ui.tab) ui.nav = 'zoom-in';
   ui.tab = tab;
-  if (push) history.pushState({ tab }, '', '#' + tab); else history.replaceState({ tab }, '', '#' + tab);
+  if (push) { history.pushState({ tab }, '', '#' + tab); ui.pushed = true; } else history.replaceState({ tab }, '', '#' + tab);
   render(); window.scrollTo(0, 0);
 }
 function goApps() {
@@ -201,8 +234,12 @@ function goApps() {
   closeAllSheets();
   const done = () => {
     ui.leaving = false; ui.tab = null; ui.hday = null; ui.nav = 'zoom-out';
-    history.replaceState(null, '', location.pathname);
+    // Opening an app added a step to the phone's back history. Go back over it instead of adding another,
+    // or every open-and-close would leave one more launcher behind the back button.
+    const pushed = ui.pushed; ui.pushed = false;
+    if (!pushed) history.replaceState(null, '', location.pathname);
     render(); window.scrollTo(0, 0);
+    if (pushed) history.back();
   };
   const main = $('#app main');
   if (!main || matchMedia('(prefers-reduced-motion: reduce)').matches) return done();
@@ -213,11 +250,14 @@ function goApps() {
 
 function render() {
   const s = state.settings;
-  document.documentElement.dataset.theme = s.theme;
+  const theme = themeOf(s);
+  document.documentElement.dataset.theme = theme;
+  document.body.dataset.app = appOf(ui.tab) || 'apps'; // each app wears its own colour
+  ui.day = today();
   X.setEnabled(s.sound !== false);
   X.setPlayOnSilent(s.soundSilent !== false);
   document.body.classList.toggle('privacy', !!s.hideAmounts);
-  $('meta[name="theme-color"]')?.setAttribute('content', s.theme === 'light' ? '#f3f2ee' : '#08090a');
+  $('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#edf1f2' : '#000000');
   const app = $('#app');
   if (!s.onboarded) { app.innerHTML = welcomeView(); $('#chrome').innerHTML = ''; return; }
   const views = { home: homeView, ledger: ledgerView, accounts: accountsView, pay: payView, settings: settingsView,
@@ -300,6 +340,14 @@ function welcomeView() {
   </div>`;
 }
 
+/** One nudge at a time above the balance: install first, then a passcode. */
+function homeHint() {
+  if (showInstallHint()) return `<section class="card install"><img class="logo-sm" src="icons/icon-192.png" alt=""><div><div class="t">Install Balance</div><div class="s">${IOS ? `Tap Share ${I.up} then <b>Add to Home Screen</b>.` : 'Browser menu, then <b>Install app</b>.'}</div></div><button class="x" data-act="dismiss-install" aria-label="Dismiss">${I.x}</button></section>`;
+  let seen = true; try { seen = !!localStorage.getItem('ledger.passcodeHint'); } catch { /* ignore */ }
+  if (!state.settings.pinHash && !seen) return `<section class="card install"><div class="ic-lock">${I.lock}</div><div><div class="t">Add a passcode</div><div class="s">So only you can open Balance.</div></div><button class="btn sm accent" data-act="lock-now">Set</button><button class="x" data-act="dismiss-passcode" aria-label="Dismiss">${I.x}</button></section>`;
+  return '';
+}
+
 function homeView() {
   const b = C.balances(state);
   const safe = C.safeToSpend(state);
@@ -314,16 +362,15 @@ function homeView() {
   const wd = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
   return `
-  ${showInstallHint() ? `<section class="card install"><img class="logo-sm" src="icons/icon-192.png" alt=""><div><div class="t">Install Balance</div><div class="s">${IOS ? `Tap Share ${I.up} then <b>Add to Home Screen</b> to open it like an app.` : 'Open your browser menu and choose <b>Install app</b> or <b>Add to Home screen</b>.'}</div></div><button class="x" data-act="dismiss-install" aria-label="Dismiss">${I.x}</button></section>` : ''}
-  ${!state.settings.pinHash && (() => { try { return !localStorage.getItem('ledger.passcodeHint'); } catch { return false; } })() ? `<section class="card install"><div class="ic-lock">${I.lock}</div><div><div class="t">Add a passcode</div><div class="s">Lock Balance so only you can open it.</div></div><button class="btn sm accent" data-act="lock-now" style="margin-left:auto">Set</button><button class="x" data-act="dismiss-passcode" aria-label="Dismiss" style="margin-left:4px">${I.x}</button></section>` : ''}
-  <section class="card hero">
+  ${homeHint()}
+  <section class="card hero page">
     <div class="eyebrow">Total balance</div>
     <div class="total num money">${b.total < 0 ? '−' : ''}<span class="cur">₹</span><span id="total-num" data-v="${Math.abs(Math.round(b.total / 100))}">${nf0.format(Math.abs(Math.round(b.total / 100)))}</span></div>
     <div class="delta">${month.count ? `${month.net >= 0 ? 'Up' : 'Down'} ${money(Math.abs(month.net))} this month` : 'Nothing in or out this month yet'}</div>
     <div class="split">
       <div class="pill"><div class="eyebrow"><i class="dot d-cash"></i>Cash</div><div class="v">${money(b.cash)}</div></div>
       <div class="pill"><div class="eyebrow"><i class="dot d-bank"></i>Bank · UPI</div><div class="v">${money(b.bank)}</div></div>
-      ${b.card > 0 ? `<div class="pill wide"><div class="eyebrow"><i class="dot d-card"></i>Credit card due</div><div class="v">${money(b.card)}</div></div>` : ''}
+      ${b.card > 0 ? `<div class="pill wide"><div class="eyebrow"><i class="dot d-card"></i>Card due</div><div class="v">${money(b.card)}</div></div>` : ''}
     </div>
   </section>
 
@@ -347,7 +394,7 @@ function homeView() {
   ${owed > 0 ? `<button class="row" data-act="tab" data-tab="accounts" style="margin-top:12px"><div class="ic" style="background:rgba(244,183,64,.14);color:var(--warn)">${I.user}</div><div class="mid"><div class="t">People owe you ${money(owed)}</div><div class="s">Tap to settle up</div></div><span class="chev">${I.chev}</span></button>` : ''}
   ${showRewindCta ? `<button class="row rw-cta" data-act="rewind" style="margin-top:12px"><div class="ic" style="background:var(--accent-soft);color:var(--accent)">${I.sparkle}</div><div class="mid"><div class="t">Your ${rw.label.toLowerCase() === 'last week' ? 'week' : rw.label} rewind is ready</div><div class="s">See where the money went</div></div><span class="chev">${I.chev}</span></button>` : ''}
 
-  <div class="section-head"><h2>Recent</h2><button class="link" data-act="tab" data-tab="ledger">See all →</button></div>
+  <div class="section-head"><h2>Recent</h2><button class="link" data-act="tab" data-tab="ledger">See all</button></div>
   ${recent.length ? `<div class="list">${recent.map(entryRow).join('')}</div>` : `<div class="empty"><b>No entries yet</b>Tap the red + to log money in or out.</div>`}`;
 }
 
@@ -390,7 +437,7 @@ function accountsView() {
   const sources = C.sourcesSummary(state);
   const maxLeft = Math.max(1, ...all.map((a) => Math.max(0, a.left)));
   return `
-  <div class="section-head" style="margin-top:4px"><h2>Accounts</h2><div style="display:flex;gap:16px"><button class="link" data-act="transfer">⇄ Transfer</button><button class="link" data-act="new-account">+ New</button></div></div>
+  <div class="section-head" style="margin-top:4px"><h2>Accounts</h2><div style="display:flex;gap:16px"><button class="link" data-act="transfer">Transfer</button><button class="link" data-act="new-account">+ New</button></div></div>
   <section class="card acct hero">
     <div class="head"><div class="name">All accounts</div><div class="bal num money">${rs(totIn - totOut)}</div></div>
     <div class="meta"><div>In<b>${money(totIn)}</b></div><div>Out<b>${money(totOut)}</b></div><div>Accounts<b>${all.length}</b></div></div>
@@ -413,13 +460,8 @@ function accountsView() {
 }
 
 function payView() {
-  const payees = state.people.filter((p) => p.vpa);
-  const upcoming = (state.recurring || []).filter((r) => !r.paused).map((r) => {
-    const t = today(); let m = C.monthKey(t);
-    if (r.lastPosted === m) m = C.nextMonth(m);
-    const date = `${m}-${C.pad(Math.min(r.day, C.daysInMonth(m + '-01')))}`;
-    return { ...r, next: date };
-  }).sort((a, b) => a.next.localeCompare(b.next));
+  const payees = C.byUsage(state.people.filter((p) => p.vpa), C.usage(state.entries, 'personId')); // the ones you pay most come first
+  const upcoming = (state.recurring || []).filter((r) => !r.paused).map((r) => ({ ...r, next: C.nextBillDate(r) })).sort((a, b) => a.next.localeCompare(b.next));
   return `
   <div class="section-head" style="margin-top:4px"><h2>Pay</h2></div>
   <section class="card hero">
@@ -444,22 +486,36 @@ function payView() {
 }
 
 function settingsView() {
-  const item = (page, icon, t, s) => `<section class="card tap" data-act="settings-page" data-page="${page}"><div class="set-row"><div class="ic">${I[icon]}</div><div><div class="t">${t}</div><div class="s">${s}</div></div><span class="go">${I.arrow}</span></div></section>`;
-  return `<div class="section-head" style="margin-top:4px"><h2>Settings</h2></div>
-    ${item('money', 'rupee', 'Money & bills', 'Opening balances, monthly budget, recurring bills')}
-    ${item('tags', 'tag', 'Accounts & tags', 'Accounts, whose money, categories, people')}
-    ${item('rewind', 'clock', 'Rewind', 'How often you get a wrap-up')}
-    ${item('privacy', 'lock', 'Privacy & lock', 'Passcode, hide amounts, hidden entries')}
-    ${item('export', 'download', 'Export & backup', 'Excel, backup file, restore')}
-    ${item('device', 'device', 'This device', 'Snapshots, demo data, erase, version')}
-    <section class="card tap" data-act="toggle-sound"><div class="set-row"><div class="ic">${I.sound}</div><div><div class="t">Sounds & haptics</div><div class="s">Soft taps and chimes as you use the app</div></div><span class="switch ${state.settings.sound !== false ? 'on' : ''}" style="margin-left:auto"></span></div></section>
-    ${state.settings.sound !== false && IOS ? `<section class="card tap" data-act="toggle-silent"><div class="set-row"><div class="ic">${I.sound}</div><div><div class="t">Play on silent</div><div class="s">Hear sounds with the ring switch off. May pause music from other apps.</div></div><span class="switch ${state.settings.soundSilent !== false ? 'on' : ''}" style="margin-left:auto"></span></div></section>` : ''}
-    ${state.settings.sound !== false ? `<section class="card tap" data-act="test-sound"><div class="set-row"><div class="ic">${I.rupee}</div><div><div class="t">Test the sounds</div><div class="s">Plays money in, then money out</div></div><span class="go">${I.arrow}</span></div></section>` : ''}
-    <p class="foot-note">Everything lives on this device only — no cloud, no account. Keep a backup now and then.<br><button class="link" data-act="check-update" style="font-size:13px">Version ${S.VERSION} · check for updates</button></p>`;
+  const s = state.settings; const sound = s.sound !== false;
+  const item = (page, icon, t, sub) => `<button class="row wrap" data-act="settings-page" data-page="${page}"><div class="ic">${I[icon]}</div><div class="mid"><div class="t">${t}</div><div class="s">${sub}</div></div><span class="chev">${I.chev}</span></button>`;
+  const toggle = (act, icon, t, sub, on) => `<button class="row wrap" data-act="${act}" role="switch" aria-checked="${on}"><div class="ic">${I[icon]}</div><div class="mid"><div class="t">${t}</div><div class="s">${sub}</div></div><span class="switch ${on ? 'on' : ''}"></span></button>`;
+  const cur = ['dark', 'light', 'auto'].includes(s.theme) ? s.theme : 'dark';
+  return `<div class="section-head first"><h2>Money</h2></div>
+    <div class="list">
+      ${item('money', 'rupee', 'Money & bills', 'Opening balances, monthly budget, recurring bills')}
+      ${item('tags', 'tag', 'Accounts & tags', 'Accounts, whose money, categories, people')}
+      ${item('rewind', 'clock', 'Rewind', 'How often you get a wrap-up')}
+    </div>
+    <div class="section-head"><h2>Look and sound</h2></div>
+    <div class="list">
+      <div class="row static"><div class="ic">${I.theme}</div><div class="mid"><div class="t">Theme</div></div>
+        <div class="seg mini" role="group" aria-label="Theme">${[['dark', 'Dark'], ['light', 'Light'], ['auto', 'Auto']].map(([v, l]) => `<button class="${cur === v ? 'on' : ''}" data-act="set-theme" data-v="${v}">${l}</button>`).join('')}</div></div>
+      ${toggle('toggle-sound', 'sound', 'Sounds and haptics', 'Taps and chimes as you use the app', sound)}
+      ${sound && IOS ? toggle('toggle-silent', 'sound', 'Play on silent', 'Hear sounds with the ring switch off. May pause music from other apps.', s.soundSilent !== false) : ''}
+      ${sound ? `<button class="row wrap" data-act="test-sound"><div class="ic">${I.rupee}</div><div class="mid"><div class="t">Test the sounds</div><div class="s">Plays money in, then money out</div></div><span class="chev">${I.chev}</span></button>` : ''}
+    </div>
+    <div class="section-head"><h2>Privacy and data</h2></div>
+    <div class="list">
+      ${item('privacy', 'lock', 'Privacy & lock', 'Passcode, hide amounts, hidden entries')}
+      ${item('export', 'download', 'Export & backup', 'Excel, backup file, restore')}
+      ${item('device', 'device', 'This device', 'Snapshots, demo data, erase')}
+    </div>
+    <p class="foot-note">Everything stays on this device. Keep a backup now and then.<br><button class="link" data-act="check-update">Version ${S.VERSION} · check for updates</button></p>`;
 }
 
 // ================================================================ sheets
 let sheetStack = [];
+let reloadWhenFree = false; // an update arrived while a sheet was open: reload once it closes
 // iOS Safari ignores overflow:hidden on body, so the page behind a sheet kept scrolling and jumping.
 // Pinning the body in place (and putting it back where it was) is the reliable fix.
 let lockedY = 0;
@@ -477,6 +533,9 @@ function openSheet(title, body, { onMount, wide } = {}) {
   const bd = document.createElement('div'); bd.className = 'backdrop';
   const sh = document.createElement('div'); sh.className = 'sheet'; sh.setAttribute('role', 'dialog'); sh.setAttribute('aria-modal', 'true'); sh.setAttribute('aria-label', title);
   sh.innerHTML = `<div class="grab"></div><div class="sheet-head"><h3>${esc(title)}</h3><button class="x" data-act="close-sheet" aria-label="Close">${I.x}</button></div><div class="sheet-body">${body}</div>`;
+  // a sheet opened over another sits above it, and its dimming covers the one below
+  // (they used to share one level, so taps beside the top sheet landed on the sheet underneath)
+  bd.style.zIndex = 40 + sheetStack.length * 2; sh.style.zIndex = 41 + sheetStack.length * 2;
   document.body.append(bd, sh);
   if (!sheetStack.length) lockScroll();
   requestAnimationFrame(() => { bd.classList.add('show'); sh.classList.add('show'); });
@@ -555,44 +614,62 @@ function toast(msg, action) {
 
 // ---------------------------------------------------------------- entry sheet
 function entrySheet(existing, preset = {}) {
+  // Frequency of use: start from what you pick most, and list your most used choices first.
+  const mine = state.entries.filter((x) => !x.health && !x.recurringId && x.type !== 'transfer');
+  const used = (field) => C.usage(mine, field);
   const e = existing ? { ...existing } : {
-    type: 'spent', amount: 0, date: today(), time: nowTime(), method: 'upi', accountId: state.accounts[0]?.id,
+    type: 'spent', amount: 0, date: today(), time: nowTime(),
+    method: C.mostUsed(C.usage(mine.filter(C.isSpend), 'method'), 'upi', Object.keys(C.METHODS)),
+    accountId: C.mostUsed(used('accountId'), state.accounts[0]?.id, state.accounts.map((a) => a.id)),
     sourceId: null, categoryId: null, personId: null, note: '', offBalance: false, hidden: false, expectBack: false, ...preset,
   };
   if (e.type === 'transfer') return transferSheet(existing);
   const title = existing ? 'Edit entry' : 'New entry';
+  // Fewer choices up front: date, whose money, account and the rarer switches stay folded on a new entry.
+  let more = !!existing;
 
   const opt = (group, val, label, cur) => `<button class="opt ${cur === val ? 'on' : ''}" data-pick="${group}" data-v="${esc(val ?? '')}">${esc(label)}</button>`;
   function body() {
     const spendy = e.type !== 'received';
     const methods = spendy ? [['cash', 'Cash'], ['upi', 'UPI'], ['credit', 'Credit card'], ['debit', 'Debit card']] : [['cash', 'Cash'], ['upi', 'Bank · UPI']];
     if (!spendy && !['cash', 'upi'].includes(e.method)) e.method = 'upi';
+    // most used first; the tags the Health rules post under aren't choices for an entry you make by hand
+    const cats = C.byUsage(state.categories, used('categoryId')).filter((c) => c.id !== H.PENALTY_CATEGORY.id || e.categoryId === c.id);
+    const sources = C.byUsage(state.sources, used('sourceId')).filter((x) => x.id !== H.REWARD_SOURCE.id || e.sourceId === x.id);
+    const people = C.byUsage(state.people, used('personId'));
+    const whose = `<div class="field"><div class="eyebrow label">${spendy ? 'Whose money' : 'From'} <span class="faint">optional</span></div><div class="opts">${sources.map((x) => opt('sourceId', x.id, x.name, e.sourceId)).join('')}<button class="opt add" data-act="add-inline" data-kind="sources">+ New</button></div></div>`;
     return `
     <div class="seg" role="tablist">${[['spent', 'Spent'], ['received', 'Received'], ['forSomeone', 'For someone']].map(([v, l]) => `<button class="${e.type === v ? 'on' : ''}" data-pick="type" data-v="${v}">${l}</button>`).join('')}</div>
     <div class="field"><label class="eyebrow" for="f-amt">Amount</label>
-      <div class="amount-box"><span class="cur">₹</span><input id="f-amt" class="num" inputmode="decimal" placeholder="0" value="${e.amount ? (e.amount / 100).toString() : ''}" autocomplete="off"><button class="calc-btn" data-act="calc-into" aria-label="Calculator">=</button></div></div>
-    <div class="field"><label class="eyebrow" for="f-note">${spendy ? 'What for?' : 'What was it?'} <span class="faint">— optional</span></label><input class="input" id="f-note" value="${esc(e.note)}" placeholder="${spendy ? 'Lunch, auto, books…' : 'Pocket money, salary…'}"></div>
-    ${spendy ? `<div class="field"><div class="eyebrow label">Category</div><div class="cats">${state.categories.map((c) => `<button class="cat ${e.categoryId === c.id ? 'on' : ''}" data-pick="categoryId" data-v="${c.id}"><span class="e">${esc(c.icon || '•')}</span>${esc(c.name)}</button>`).join('')}</div></div>` : ''}
-    ${e.type === 'forSomeone' ? `<div class="field"><div class="eyebrow label">For whom</div><div class="opts">${state.people.map((p) => opt('personId', p.id, p.name, e.personId)).join('')}<button class="opt add" data-act="add-inline" data-kind="people">+ New</button></div>
+      <div class="amount-box"><span class="cur">₹</span><input id="f-amt" class="num" inputmode="decimal" placeholder="0" value="${e.amount ? (e.amount / 100).toString() : ''}" autocomplete="off"><button class="calc-btn" data-act="calc-into" aria-label="Calculator">${I.calc}</button></div></div>
+    ${spendy ? `<div class="field"><div class="eyebrow label">Category</div><div class="cats">${cats.map((c) => `<button class="cat ${e.categoryId === c.id ? 'on' : ''}" data-pick="categoryId" data-v="${c.id}"><span class="e">${esc(c.icon || '•')}</span>${esc(c.name)}</button>`).join('')}</div></div>` : ''}
+    ${e.type === 'forSomeone' ? `<div class="field"><div class="eyebrow label">For whom</div><div class="opts">${people.map((x) => opt('personId', x.id, x.name, e.personId)).join('')}<button class="opt add" data-act="add-inline" data-kind="people">+ New</button></div>
       <div class="check ${e.expectBack ? 'on' : ''}" data-toggle="expectBack"><span class="box">${e.expectBack ? I.check : ''}</span><div><div class="t">They'll pay me back</div><div class="s">Shows up under People until it's settled.</div></div></div></div>` : ''}
-    <div class="field"><div class="eyebrow label">When</div><div class="opts"><input class="input num" type="date" id="f-date" value="${e.date}" max="${C.addDays(today(), 366)}"><input class="input num" type="time" id="f-time" value="${e.time || ''}"></div></div>
+    <div class="field"><label class="eyebrow" for="f-note">${spendy ? 'What for?' : 'What was it?'} <span class="faint">optional</span></label><input class="input" id="f-note" value="${esc(e.note)}" placeholder="${spendy ? 'Lunch, auto, books…' : 'Pocket money, salary…'}"></div>
     <div class="field"><div class="eyebrow label">${spendy ? 'Paid via' : 'Got it in'}</div><div class="opts">${methods.map(([v, l]) => opt('method', v, l, e.method)).join('')}</div></div>
-    <div class="field"><div class="eyebrow label">${spendy ? 'Whose money' : 'From'} <span class="faint">— optional</span></div><div class="opts">${state.sources.map((s) => opt('sourceId', s.id, s.name, e.sourceId)).join('')}<button class="opt add" data-act="add-inline" data-kind="sources">+ New</button></div></div>
-    <div class="field"><div class="eyebrow label">Account</div><div class="opts">${state.accounts.map((a) => opt('accountId', a.id, a.name, e.accountId)).join('')}</div></div>
-    ${spendy ? `<div class="check ${e.offBalance ? 'on' : ''}" data-toggle="offBalance" style="margin-top:18px"><span class="box">${e.offBalance ? I.check : ''}</span><div><div class="t">Not from my balance</div><div class="s">Paid with someone else's card or cash — track it, but don't deduct it.</div></div></div>` : ''}
-    <div class="check ${e.hidden ? 'on' : ''}" data-toggle="hidden"><span class="box">${e.hidden ? I.check : ''}</span><div><div class="t">Hide this entry</div><div class="s">Still counts in totals, but stays out of lists.</div></div></div>
-    <div class="btn-row">${existing ? `<button class="btn danger" data-act="delete-entry" style="flex:0 0 auto;width:auto;padding:16px 20px" aria-label="Delete">${I.trash}</button>` : ''}<button class="btn accent" data-act="save-entry">${existing ? 'Save changes' : 'Add entry'}</button></div>`;
+    ${spendy ? '' : whose}
+    <button class="more-btn ${more ? 'open' : ''}" data-more aria-expanded="${more}">${I.chev}<span>Date, ${spendy ? 'whose money, ' : ''}account and more</span></button>
+    <div class="more" ${more ? '' : 'hidden'}>
+      <div class="field"><div class="eyebrow label">When</div><div class="opts"><input class="input num" type="date" id="f-date" value="${e.date}" max="${C.addDays(today(), 366)}"><input class="input num" type="time" id="f-time" value="${e.time || ''}"></div></div>
+      ${spendy ? whose : ''}
+      <div class="field"><div class="eyebrow label">Account</div><div class="opts">${state.accounts.map((a) => opt('accountId', a.id, a.name, e.accountId)).join('')}</div></div>
+      ${spendy ? `<div class="check ${e.offBalance ? 'on' : ''}" data-toggle="offBalance" style="margin-top:18px"><span class="box">${e.offBalance ? I.check : ''}</span><div><div class="t">Not from my balance</div><div class="s">Someone else's card or cash paid. Track it, but don't deduct it.</div></div></div>` : ''}
+      <div class="check ${e.hidden ? 'on' : ''}" data-toggle="hidden"><span class="box">${e.hidden ? I.check : ''}</span><div><div class="t">Hide this entry</div><div class="s">Still counts in totals, but stays out of lists.</div></div></div>
+    </div>
+    <div class="btn-row stick">${existing ? `<button class="btn danger icon-only" data-act="delete-entry" aria-label="Delete">${I.trash}</button>` : ''}<button class="btn accent" data-act="save-entry">${existing ? 'Save changes' : 'Add entry'}</button></div>`;
   }
   const sh = openSheet(title, body());
   const bodyEl = $('.sheet-body', sh);
   const pull = () => {
-    const a = $('#f-amt', sh); if (a) e.amount = C.toPaise(a.value.replace(/,/g, ''));
+    const a = $('#f-amt', sh); if (a) e.amount = amtOf(a.value);
     e.note = $('#f-note', sh)?.value.trim() || ''; e.date = $('#f-date', sh)?.value || today(); e.time = $('#f-time', sh)?.value || '';
   };
   const redraw = () => { pull(); const y = sh.scrollTop; bodyEl.innerHTML = body(); sh.scrollTop = y; };
   if (!existing) if (FINE) setTimeout(() => $('#f-amt', sh)?.focus(), 350);
 
   sh.addEventListener('click', async (ev) => {
+    const mb = ev.target.closest('[data-more]');
+    if (mb) { more = !more; mb.classList.toggle('open', more); mb.setAttribute('aria-expanded', more); $('.more', sh).hidden = !more; return; }
     const pick = ev.target.closest('[data-pick]');
     if (pick) {
       const k = pick.dataset.pick, v = pick.dataset.v || null;
@@ -618,7 +695,7 @@ function entrySheet(existing, preset = {}) {
       openCalc(e.amount ? String(e.amount / 100) : '', (v) => { e.amount = C.toPaise(v); bodyEl.innerHTML = body(); });
     } else if (act === 'save-entry') {
       pull();
-      if (!(e.amount > 0)) { $('.amount-box', sh).style.borderColor = 'var(--accent)'; $('#f-amt', sh).focus(); return warn('Enter an amount'); }
+      if (!(e.amount > 0)) { const box = $('.amount-box', sh); box.classList.remove('nope'); void box.offsetWidth; box.classList.add('nope'); sh.scrollTop = 0; if (FINE) $('#f-amt', sh).focus(); return warn('Enter an amount'); }
       if (e.type === 'forSomeone' && !e.personId) return warn('Pick who it was for');
       if (e.type === 'received') { e.offBalance = false; e.categoryId = null; }
       if (e.type !== 'forSomeone') e.expectBack = false;
@@ -655,11 +732,11 @@ function transferSheet(existing) {
     ${t.kind === 'account' ? `<div class="field"><div class="eyebrow label">From</div><div class="opts">${state.accounts.map((a) => `<button class="opt ${t.accountId === a.id ? 'on' : ''}" data-from="${a.id}">${esc(a.name)}</button>`).join('')}</div></div>
     <div class="field"><div class="eyebrow label">To</div><div class="opts">${state.accounts.map((a) => `<button class="opt ${t.toAccountId === a.id ? 'on' : ''}" data-to="${a.id}">${esc(a.name)}</button>`).join('')}</div></div>` : ''}
     <div class="field"><div class="eyebrow label">When</div><div class="opts"><input class="input num" type="date" id="t-date" value="${t.date}"><input class="input num" type="time" id="t-time" value="${t.time || ''}"></div></div>
-    <div class="field"><label class="eyebrow" for="t-note">Note <span class="faint">— optional</span></label><input class="input" id="t-note" value="${esc(t.note || '')}"></div>
+    <div class="field"><label class="eyebrow" for="t-note">Note <span class="faint">optional</span></label><input class="input" id="t-note" value="${esc(t.note || '')}"></div>
     <div class="btn-row">${existing ? `<button class="btn danger" data-del style="flex:0 0 auto;width:auto;padding:16px 20px" aria-label="Delete">${I.trash}</button>` : ''}<button class="btn accent" data-save>${existing ? 'Save changes' : 'Transfer'}</button></div>`;
   const sh = openSheet(existing ? 'Edit transfer' : 'Transfer', body());
   const el = $('.sheet-body', sh);
-  const pull = () => { t.amount = C.toPaise(($('#t-amt', sh).value || '').replace(/,/g, '')); t.date = $('#t-date', sh).value || today(); t.time = $('#t-time', sh).value; t.note = $('#t-note', sh).value.trim(); };
+  const pull = () => { t.amount = amtOf($('#t-amt', sh).value); t.date = $('#t-date', sh).value || today(); t.time = $('#t-time', sh).value; t.note = $('#t-note', sh).value.trim(); };
   sh.addEventListener('click', (ev) => {
     const g = ev.target.closest('[data-k],[data-from],[data-to],[data-save],[data-del]');
     if (!g) return;
@@ -672,7 +749,7 @@ function transferSheet(existing) {
       if (!(t.amount > 0)) return warn('Enter an amount');
       if (t.kind === 'account' && t.accountId === t.toAccountId) return warn('Pick two different accounts');
       if (t.kind !== 'account') { delete t.toAccountId; t.accountId = t.accountId || state.accounts[0]?.id; }
-      if (existing) Object.assign(byId(state.entries, existing.id), t);
+      if (existing) { const cur = byId(state.entries, existing.id); Object.assign(cur, t); if (t.kind !== 'account') delete cur.toAccountId; }
       else state.entries.push({ ...t, id: S.uid(), createdAt: Date.now() });
       closeSheet(); commit(existing ? 'Saved' : 'Transfer logged');
     }
@@ -750,7 +827,7 @@ function payFlow(target) {
   const sh = openSheet(`Pay ${target.name || target.vpa}`, `
     <div class="row" style="cursor:default"><div class="ic" style="font-weight:750">${esc((target.name || target.vpa)[0])}</div><div class="mid"><div class="t">${esc(target.name || target.vpa)}</div><div class="s">${esc(target.vpa)}</div></div></div>
     <div class="field"><label class="eyebrow" for="pay-amt">Amount</label><div class="amount-box"><span class="cur">₹</span><input id="pay-amt" class="num" inputmode="decimal" placeholder="0" value="${p.amount ? p.amount / 100 : ''}"></div></div>
-    <div class="field"><label class="eyebrow" for="pay-note">Note <span class="faint">— shows in UPI too</span></label><input class="input" id="pay-note" placeholder="Chai, rent, split…"></div>
+    <div class="field"><label class="eyebrow" for="pay-note">Note <span class="faint">shows in UPI too</span></label><input class="input" id="pay-note" placeholder="Chai, rent, split…"></div>
     <div class="field"><div class="eyebrow label">Category</div><div class="cats">${state.categories.map((c) => `<button class="cat" data-cat="${c.id}"><span class="e">${esc(c.icon)}</span>${esc(c.name)}</button>`).join('')}</div></div>
     <div class="field"><div class="eyebrow label">Account</div><div class="opts">${state.accounts.map((a, i) => `<button class="opt ${i === 0 ? 'on' : ''}" data-acc="${a.id}">${esc(a.name)}</button>`).join('')}</div></div>
     ${IOS ? `<div class="eyebrow" style="margin:20px 2px 8px">Pay with</div><div class="opts three">${['gpay', 'phonepe', 'paytm'].map((a) => `<button class="btn accent" data-upi="${a}" style="padding:14px 4px;font-size:14px">${C.UPI_APPS[a].label}</button>`).join('')}</div><button class="btn ghost" data-log style="margin-top:10px">Just log it</button>`
@@ -758,7 +835,7 @@ function payFlow(target) {
     <p class="faint" style="font-size:12.5px;text-align:center;margin-top:14px">Your UPI app does the paying. Balance never sees your PIN or bank details.</p>`);
   if (FINE) setTimeout(() => $('#pay-amt', sh).focus(), 300);
   const build = () => ({ id: S.uid(), createdAt: Date.now(), type: 'spent', method: 'upi', date: today(), time: nowTime(),
-    amount: C.toPaise(($('#pay-amt', sh).value || '').replace(/,/g, '')), note: $('#pay-note', sh).value.trim() || target.name || target.vpa,
+    amount: amtOf($('#pay-amt', sh).value), note: $('#pay-note', sh).value.trim() || target.name || target.vpa,
     personId: target.personId || null, categoryId: p.categoryId, accountId: p.accountId });
   sh.addEventListener('click', (ev) => {
     const c = ev.target.closest('[data-cat]');
@@ -823,7 +900,7 @@ function settingsPage(page) {
       <div class="section-head"><h2>Recurring bills</h2><button class="link" data-add-bill>+ Add</button></div>
       <div class="card" style="padding:2px 18px">${(state.recurring || []).length ? state.recurring.map((r) => `<div class="line-item"><div class="grow"><div class="t">${esc(r.name)}</div><div class="s">${rs(r.amount)} · day ${r.day} of each month · ${esc(C.METHODS[r.method]?.label)}</div></div><button class="btn sm ghost" data-pause="${r.id}">${r.paused ? 'Resume' : 'Pause'}</button><button class="btn sm danger" data-del-bill="${r.id}" aria-label="Delete bill">${I.trash}</button></div>`).join('') : '<p class="faint" style="padding:14px 0;margin:0">Rent, recharges, subscriptions — added for you on the day.</p>'}</div>`;
     mount = (sh) => sh.addEventListener('click', async (ev) => {
-      const get = (id) => C.toPaise(($(id, sh).value || '').replace(/,/g, ''));
+      const get = (id) => amtOf($(id, sh).value);
       if (ev.target.closest('[data-save-money]')) { s.openingCash = get('#m-cash'); s.openingBank = get('#m-bank'); s.monthlyBudget = get('#m-budget'); closeSheet(); commit('Saved'); }
       else if (ev.target.closest('[data-add-bill]')) billSheet();
       else if (ev.target.closest('[data-pause]')) { const r = byId(state.recurring, ev.target.closest('[data-pause]').dataset.pause); r.paused = !r.paused; S.save(state); closeSheet(); settingsPage('money'); render(); }
@@ -887,7 +964,7 @@ function settingsPage(page) {
         try {
           const next = S.parseBackup(await f.text());
           if (await ask('Restore this backup?', `${next.entries.length} entries from “${esc(f.name)}” will replace the ${state.entries.length} on this device. A snapshot of the current data is kept.`, 'Restore', true)) {
-            S.autoSnapshot(state); state = next; state.settings.onboarded = true; closeAllSheets(); commit('Backup restored');
+            S.autoSnapshot(state); swapState(next); state.settings.onboarded = true; closeAllSheets(); commit('Backup restored');
           }
         } catch (err) { toast(err.message || 'Could not read that file'); }
         ev.target.value = '';
@@ -903,9 +980,9 @@ function settingsPage(page) {
       <p class="foot-note">Balance ${S.VERSION} · ${(used / 1024).toFixed(1)} KB stored · ${state.entries.length} entries</p>`;
     mount = (sh) => sh.addEventListener('click', async (ev) => {
       const sn = ev.target.closest('[data-snap]')?.dataset.snap;
-      if (sn != null) { const snap = S.listSnapshots()[Number(sn)]; if (await ask('Restore snapshot?', `Go back to ${esc(fmtDay(snap.date))} (${snap.count} entries)? What you have now is replaced.`, 'Restore', true)) { state = S.parseBackup(JSON.stringify(snap.data)); closeAllSheets(); commit('Snapshot restored'); } }
-      if (ev.target.closest('[data-demo]')) { if (await ask('Load demo data?', 'This replaces everything on this device with sample entries. Back up first if you need your data.', 'Load demo', true)) { state = S.demoState(); closeAllSheets(); ui.tab = 'home'; commit('Demo data loaded'); } }
-      if (ev.target.closest('[data-erase]')) { if (await ask('Erase everything?', 'All entries, accounts, snapshots and your passcode are deleted from this device. This can’t be undone.', 'Erase', true)) { S.clearAll(); state = S.defaultState(); ui.locked = false; closeAllSheets(); render(); toast('Erased'); } }
+      if (sn != null) { const snap = S.listSnapshots()[Number(sn)]; if (await ask('Restore snapshot?', `Go back to ${esc(fmtDay(snap.date))} (${snap.count} entries)? What you have now is replaced.`, 'Restore', true)) { swapState(S.parseBackup(JSON.stringify(snap.data))); closeAllSheets(); commit('Snapshot restored'); } }
+      if (ev.target.closest('[data-demo]')) { if (await ask('Load demo data?', 'This replaces everything on this device with sample entries. Back up first if you need your data.', 'Load demo', true)) { swapState(S.demoState()); closeAllSheets(); ui.tab = null; history.replaceState(null, '', location.pathname); commit('Demo data loaded'); window.scrollTo(0, 0); } }
+      if (ev.target.closest('[data-erase]')) { if (await ask('Erase everything?', 'All entries, accounts, snapshots and your passcode are deleted from this device. This can’t be undone.', 'Erase', true)) { S.clearAll(); swapState(S.defaultState()); ui.locked = false; ui.tab = null; ui.pushed = false; history.replaceState(null, '', location.pathname); closeAllSheets(); render(); window.scrollTo(0, 0); toast('Erased'); } }
     });
   }
   openSheet(title, html, { onMount: mount });
@@ -926,7 +1003,7 @@ function billSheet() {
     if (m) { b.method = m.dataset.m; $$('[data-m]', sh).forEach((x) => x.classList.toggle('on', x === m)); }
     if (a) { b.accountId = a.dataset.a; $$('[data-a]', sh).forEach((x) => x.classList.toggle('on', x === a)); }
     if (ev.target.closest('[data-save-bill]')) {
-      b.name = $('#b-name', sh).value.trim(); b.amount = C.toPaise(($('#b-amt', sh).value || '').replace(/,/g, '')); b.day = Math.max(1, Math.min(31, Number($('#b-day', sh).value) || 1));
+      b.name = $('#b-name', sh).value.trim(); b.amount = amtOf($('#b-amt', sh).value); b.day = Math.max(1, Math.min(31, Number($('#b-day', sh).value) || 1));
       if (!b.name || !(b.amount > 0)) return warn('Add a name and an amount');
       const t = today(); const thisMonth = C.monthKey(t);
       const startMonth = b.day >= Number(t.slice(8)) ? thisMonth : C.nextMonth(thisMonth);
@@ -949,6 +1026,7 @@ async function addTag(kind) {
 async function renameTag(kind, id) {
   const x = byId(state[kind], id);
   const name = await prompt1('Rename', 'Name', x.name);
+  if (name === null) return; // cancelled
   if (name) x.name = name;
   if (kind === 'people') { const v = await prompt1('UPI ID', 'UPI ID — optional', x.vpa || '', { placeholder: 'name@okaxis' }); if (v !== null) x.vpa = v || undefined; }
   if (kind === 'categories') { const e = await prompt1('Emoji', 'Emoji', x.icon || ''); if (e) x.icon = e; }
@@ -960,12 +1038,12 @@ async function removeTag(kind, id) {
   if (kind === 'accounts') {
     const rest = state.accounts.filter((a) => a.id !== id);
     if (!rest.length) return;
-    if (!(await ask(`Delete ${esc(x.name)}?`, used ? `Its ${used} entr${used === 1 ? 'y moves' : 'ies move'} to ${esc(rest[0].name)}.` : 'It has no entries.', 'Delete', true))) return;
+    if (!(await ask(`Delete ${x.name}?`, used ? `Its ${used} entr${used === 1 ? 'y moves' : 'ies move'} to ${esc(rest[0].name)}.` : 'It has no entries.', 'Delete', true))) return;
     state.entries.forEach((e) => { if (e.accountId === id) e.accountId = rest[0].id; if (e.toAccountId === id) e.toAccountId = rest[0].id; });
     state.entries = state.entries.filter((e) => !(e.type === 'transfer' && e.kind === 'account' && e.accountId === e.toAccountId));
     state.recurring.forEach((r) => { if (r.accountId === id) r.accountId = rest[0].id; });
   } else {
-    if (!(await ask(`Delete ${esc(x.name)}?`, used ? `${used} entr${used === 1 ? 'y keeps its' : 'ies keep their'} amount but lose this tag.` : 'Nothing uses it yet.', 'Delete', true))) return;
+    if (!(await ask(`Delete ${x.name}?`, used ? `${used} entr${used === 1 ? 'y keeps its' : 'ies keep their'} amount but lose this tag.` : 'Nothing uses it yet.', 'Delete', true))) return;
     const field = { sources: 'sourceId', categories: 'categoryId', people: 'personId' }[kind];
     state.entries.forEach((e) => { if (e[field] === id) e[field] = null; });
   }
@@ -973,7 +1051,16 @@ async function removeTag(kind, id) {
   commit('Deleted');
 }
 
-function download(name, blob) {
+/**
+ * Hands a file to the user. An installed iPhone app can't download a file the usual way (the link
+ * opens a blank page with no way back), so there it goes through the share sheet: Save to Files, AirDrop…
+ */
+async function download(name, blob) {
+  const file = new File([blob], name, { type: blob.type });
+  if ((IOS || (STANDALONE && !FINE)) && navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: name }); return; }
+    catch (err) { if (err?.name === 'AbortError') return; /* otherwise fall back to a plain download */ }
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
@@ -1015,7 +1102,7 @@ function settleHealth({ quietRender = false } = {}) {
 }
 function scheduleMidnight() {
   const n = new Date(), next = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1, 0, 0, 5);
-  setTimeout(() => { settleHealth(); if (!sheetStack.length) render(); scheduleMidnight(); }, next - n);
+  setTimeout(() => { catchUp(); if (!sheetStack.length) render(); scheduleMidnight(); }, next - n);
 }
 
 function applySteps(map, from) {
@@ -1119,11 +1206,11 @@ function healthView() {
     <div class="h-big num">${v.stepsKnown ? nf0.format(v.steps) : '—'}<small>/ ${nf0.format(rules.stepGoal)}</small></div>
     <div class="meter ${v.stepsMet ? 'good' : stepPct < .5 && d !== t ? 'over' : ''}" style="margin-top:12px"><i style="width:${(stepPct * 100).toFixed(1)}%"></i></div>
     <div class="foot">${v.stepsMet ? `Goal hit · <b class="pos">+${rs(rules.reward)}</b>` : v.stepsKnown ? `${nf0.format(rules.stepGoal - v.steps)} to go` : 'Not synced yet'}</div>
-    <div class="h-btns"><button class="btn accent" data-act="h-paste" data-d="${d}">${I.watch} Paste from Health</button><button class="btn ghost" data-act="h-steps" data-d="${d}">Type steps</button></div>
+    <div class="h-btns"><button class="btn accent" data-act="h-paste" data-d="${d}">${I.watch} Paste steps</button><button class="btn ghost" data-act="h-steps" data-d="${d}">Type steps</button></div>
   </section>
 
   <button class="row" data-act="open-app" data-app="food" data-day="${d}" style="margin-top:12px"><div class="ic">${I.food}</div>
-    <div class="mid"><div class="t">${kcal(v.kcal)} eaten${v.cheat ? '<span class="tag warn">cheat</span>' : ''}</div><div class="s">${v.overate ? `Over the ${kcal(limit)} limit · −${rs(rules.penalty)}` : `Limit ${kcal(limit)} · log food in Diet & food`}</div></div><span class="chev">${I.chev}</span></button>
+    <div class="mid"><div class="t">${kcal(v.kcal)} eaten${v.cheat ? '<span class="tag warn">cheat</span>' : ''}</div><div class="s">${v.overate ? `Over the ${kcal(limit)} limit · −${rs(rules.penalty)}` : `Limit ${kcal(limit)}`}</div></div><span class="chev">${I.chev}</span></button>
 
   ${verdictCard(d, day, rules)}
 
@@ -1160,11 +1247,11 @@ function daysView() {
 
 function rulesView() {
   const h = state.health;
-  const row = (act, icon, t, s, extra = '') => `<section class="card tap" data-act="${act}" ${extra}><div class="set-row"><div class="ic">${I[icon]}</div><div><div class="t">${t}</div><div class="s">${s}</div></div><span class="go">${I.arrow}</span></div></section>`;
+  const row = (act, icon, t, s) => `<button class="row wrap" data-act="${act}"><div class="ic">${I[icon]}</div><div class="mid"><div class="t">${t}</div><div class="s">${s}</div></div><span class="chev">${I.chev}</span></button>`;
   return `<div class="section-head" style="margin-top:4px"><h2>Setup</h2></div>
   ${h.enabled ? `<section class="card">${rulesList(h)}</section>` : ''}
-  ${row('h-connect', 'watch', 'Connect Apple Watch', 'Send your steps from Apple Health with a Shortcut')}
-  ${row(h.enabled ? 'h-rules' : 'h-setup', 'rupee', 'Goals & money', h.enabled ? `${nf0.format(h.stepGoal)} steps · ${kcal(h.calorieGoal)} · +${rs(h.reward)} / −${rs(h.penalty)}` : 'Off. Turn the rules on')}`;
+  <div class="list" style="margin-top:12px">${row('h-connect', 'watch', 'Connect Apple Watch', 'Send your steps from Apple Health with a Shortcut')}
+  ${row(h.enabled ? 'h-rules' : 'h-setup', 'rupee', 'Goals & money', h.enabled ? `${nf0.format(h.stepGoal)} steps · ${kcal(h.calorieGoal)} · +${rs(h.reward)} / −${rs(h.penalty)}` : 'Off. Turn the rules on')}</div>`;
 }
 
 // ---------------------------------------------------------------- Diet & food app
@@ -1260,7 +1347,7 @@ function stepsSheet(d, { note = '', value } = {}) {
   const sh = openSheet(`Steps · ${fmtDay(d)}`, `
     ${note ? `<p class="lead" style="margin-top:0">${esc(note)}</p>` : ''}
     <div class="field" style="margin-top:0"><label class="eyebrow" for="st-n">Steps on ${esc(fmtDay(d))}</label><input class="input num" id="st-n" inputmode="numeric" placeholder="${nf0.format(state.health.stepGoal)}" value="${value ?? r?.steps ?? ''}" style="font-size:22px"></div>
-    <div class="field"><label class="eyebrow" for="st-paste">Or paste what the shortcut copied <span class="faint">— optional</span></label><textarea class="input" id="st-paste" placeholder="2026-11-10=12034"></textarea></div>
+    <div class="field"><label class="eyebrow" for="st-paste">Or paste what the shortcut copied <span class="faint">optional</span></label><textarea class="input" id="st-paste" placeholder="2026-11-10=12034"></textarea></div>
     <p class="faint" style="font-size:12.5px;margin:10px 2px 0">The day's total is in the Fitness app on your iPhone (Activity → Steps), or Health → Steps.</p>
     <div class="btn-row"><button class="btn ghost" data-act="close-sheet">Cancel</button><button class="btn accent" data-st-save>Save steps</button></div>`);
   if (FINE) setTimeout(() => $('#st-n', sh)?.focus(), 300);
@@ -1348,7 +1435,7 @@ function connectSheet() {
     </ol>
     <div class="eyebrow label" style="margin-top:20px">3 · Paste it in</div>
     <ol class="steps-guide">
-      <li>Open Balance → <b>Health</b> → <b>Paste from Health</b>, and tap <b>Paste</b> when iPhone asks. That day settles straight away.</li>
+      <li>Open Balance → <b>Health</b> → <b>Paste steps</b>, and tap <b>Paste</b> when iPhone asks. That day settles straight away.</li>
       <li>Missed it? Run the shortcut by hand the next morning, but change its Start Date to <b>yesterday</b> and its date to yesterday too. Or just type the steps.</li>
     </ol>
     <p class="faint" style="font-size:12.5px;margin:16px 2px 0">iPhone hides Health data while the phone is locked, so the 11:59 PM run can fail if your phone is locked. If it does, Balance simply waits. It never fines a day without a final count. A count taken before 11:30 PM only counts if it already hits your goal.</p>
@@ -1359,7 +1446,7 @@ function connectSheet() {
 document.addEventListener('click', (ev) => {
   const el = ev.target.closest('[data-act^="h-"]');
   if (!el) return;
-  const d = el.dataset.d;
+  const d = el.dataset.d || healthDay();
   switch (el.dataset.act) {
     case 'h-rules': rulesSheet(el.dataset.first === '1'); break;
     case 'h-setup': if (state.health.profile) rulesSheet(true); else profileSheet(true); break;
@@ -1418,7 +1505,7 @@ function foodCard(d, day, rules, v, limit, kcalPct, meals) {
     <div class="meter ${v.overate ? 'over' : kcalPct > .85 ? 'low' : ''}" style="margin-top:12px"><i style="width:${(kcalPct * 100).toFixed(1)}%"></i></div>
     <div class="foot">${!state.health.enabled ? `Goal ${kcal(rules.calorieGoal)}` : v.cheat ? `Cheat meal logged · <b class="neg">−${rs(rules.penalty)}</b>` : v.overByCalories ? `${kcal(v.over)} over your goal · <b class="neg">−${rs(rules.penalty)}</b>` : `${kcal(Math.max(0, limit - v.kcal))} left before the ${kcal(limit)} limit`}</div>
     ${macroBars(t, tg)}
-    ${tg ? `<button class="link" data-act="h-breakdown" data-d="${d}" style="margin-top:10px;font-size:13px">Full breakdown →</button>` : `<button class="link" data-act="h-body" style="margin-top:10px;font-size:13px">Set your body & goal for protein, carbs and fat targets →</button>`}
+    ${tg ? `<button class="link" data-act="h-breakdown" data-d="${d}" style="margin-top:10px;font-size:13px">Full breakdown</button>` : `<button class="link" data-act="h-body" style="margin-top:10px;font-size:13px">Set your body & goal for protein, carbs and fat targets</button>`}
     <div class="qas">${quick('h-scan', I.barcode, 'Scan')}${quick('h-label', I.camera, 'Label')}${quick('h-recipes', I.bowl, 'Meal')}${quick('h-food', I.plus, 'Food')}</div>
     ${meals.length ? `<div class="list" style="margin-top:12px">${meals.map((m) => `<button class="row" data-act="h-meal" data-d="${d}" data-id="${m.id}"><div class="ic ${m.cheat ? 'out' : ''}">${m.cheat ? '🍕' : m.src === 'scanned' ? '▥' : m.src === 'recipe' ? '🥘' : '🍽️'}</div><div class="mid"><div class="t">${esc(m.name)}${m.cheat ? '<span class="tag warn">cheat</span>' : ''}</div><div class="s">${esc([m.amount, fmtTime(m.time), m.p != null ? `P ${g1(m.p)} · C ${g1(m.c)} · F ${g1(m.f)}` : ''].filter(Boolean).join(' · '))}</div></div><div class="amt">${kcal(m.kcal)}</div></button>`).join('')}</div>` : ''}
   </section>`;
@@ -1614,7 +1701,7 @@ function createFoodSheet(pre = {}, { onSaved, note } = {}) {
   const sh = openSheet(pre.barcode ? 'Add this product' : 'Add a food', `
     ${note ? `<p class="lead" style="margin-top:0">${note}</p>` : ''}
     <div class="field" style="margin-top:0"><label class="eyebrow" for="cf-name">Name</label><input class="input" id="cf-name" value="${esc(f.name)}" placeholder="Paneer wrap from canteen"></div>
-    <div class="field"><label class="eyebrow" for="cf-brand">Brand <span class="faint">— optional</span></label><input class="input" id="cf-brand" value="${esc(f.brand)}"></div>
+    <div class="field"><label class="eyebrow" for="cf-brand">Brand <span class="faint">optional</span></label><input class="input" id="cf-brand" value="${esc(f.brand)}"></div>
     <div class="field"><div class="eyebrow label">The numbers are per</div><div class="seg"><button class="${f.per === '100' ? 'on' : ''}" data-per="100">100 g / ml</button><button class="${f.per === 'serving' ? 'on' : ''}" data-per="serving">1 serving</button></div>
       <div class="amount-box" id="cf-sbox" style="margin-top:10px;${f.per === 'serving' ? '' : 'display:none'}"><input id="cf-sg" class="num" inputmode="decimal" value="${f.servingG}" placeholder="Serving size" style="font-size:19px"><span class="faint" style="font-size:13px;padding-right:6px">g in a serving</span></div></div>
     <div class="nf-grid">${N.NUTRIENTS.map(nf).join('')}</div>
@@ -1759,7 +1846,7 @@ function breakdownSheet(d) {
   const goal = { kcal: state.health.calorieGoal, p: tg?.protein, c: tg?.carbs, f: tg?.fat, fib: tg?.fibre, sug: tg?.sugarMax, na: tg?.sodiumMax };
   const missing = meals.filter((m) => m.p == null).length;
   openSheet(`Breakdown · ${fmtDay(d)}`, `
-    <div class="card" style="padding:4px 18px">${N.NUTRIENTS.map(([k, l, u]) => { const cap = k === 'sug' || k === 'na'; const over = goal[k] && t[k] > goal[k]; return `<div class="line-item"><div class="grow"><div class="t">${l}</div><div class="track" style="margin-top:8px"><i style="width:${goal[k] ? Math.min(100, (t[k] / goal[k]) * 100) : 0}%;${over && cap ? 'background:var(--accent)' : ''}"></i></div></div><div class="num" style="font-weight:650;text-align:right;min-width:96px">${g1(t[k])} <span class="faint" style="font-weight:500">/ ${goal[k] ?? '—'}${cap ? ' max' : ''} ${u}</span></div></div>`; }).join('')}</div>
+    <div class="card" style="padding:4px 18px">${N.NUTRIENTS.map(([k, l, u]) => { const cap = k === 'sug' || k === 'na'; const over = goal[k] && t[k] > goal[k]; return `<div class="line-item"><div class="grow"><div class="t">${l}</div><div class="track" style="margin-top:8px"><i style="width:${goal[k] ? Math.min(100, (t[k] / goal[k]) * 100) : 0}%;${over && cap ? 'background:var(--neg)' : ''}"></i></div></div><div class="num" style="font-weight:650;text-align:right;min-width:96px">${g1(t[k])} <span class="faint" style="font-weight:500">/ ${goal[k] ?? '—'}${cap ? ' max' : ''} ${u}</span></div></div>`; }).join('')}</div>
     ${missing ? `<p class="faint" style="font-size:12.5px;margin:10px 2px 0">${missing} item${missing === 1 ? ' was' : 's were'} added with calories only, so macros are a little under.</p>` : ''}
     <div class="btn-row"><button class="btn accent" data-act="close-sheet">Done</button></div>`);
 }
@@ -1776,7 +1863,7 @@ document.addEventListener('click', (ev) => {
     case 'h-log-food': { const f = state.health.foods.find((x) => x.id === el.dataset.id); if (f) amountSheet(f, { day: today() }); break; }
     case 'h-del-food': {
       const f = state.health.foods.find((x) => x.id === el.dataset.id);
-      ask(`Delete ${esc(f.name)}?`, 'Days you already logged it keep their calories.', 'Delete', true).then((yes) => { if (yes) { state.health.foods = state.health.foods.filter((x) => x.id !== f.id); S.save(state); render(); toast('Deleted'); } });
+      ask(`Delete ${f.name}?`, 'Days you already logged it keep their calories.', 'Delete', true).then((yes) => { if (yes) { state.health.foods = state.health.foods.filter((x) => x.id !== f.id); S.save(state); render(); toast('Deleted'); } });
       break;
     }
     case 'h-scan': scanSheet(d); break;
@@ -1860,12 +1947,12 @@ document.addEventListener('click', async (ev) => {
     case 'tab': openTab(el.dataset.tab); break;
     case 'open-app': { const day = el.dataset.day; openTab(APPS[el.dataset.app].tabs[0][0], { push: !ui.tab }); if (day && day !== today()) { ui.hday = day; render(); } break; }
     case 'go-apps': goApps(); break;
+    case 'open-settings': openTab('settings', { push: !ui.tab }); break;
     case 'goto-ledger': ui.period = 'month'; ui.filter = el.dataset.filter; openTab('ledger'); break;
     case 'period': ui.period = el.dataset.v; render(); break;
     case 'filter': ui.filter = el.dataset.v; render(); break;
     case 'new-entry': if (appOf(ui.tab) === 'food') pickFood({ day: healthDay() }); else entrySheet(null); break;
     case 'open-entry': { const e = byId(state.entries, el.dataset.id); if (e?.health) { closeAllSheets(); openHealthDay(e.health.day); } else if (e) { if (inSheet) closeAllSheets(); entrySheet(e); } break; }
-    case 'calc': openCalc(); break;
     case 'search': openSearch(); break;
     case 'lock-now':
       if (state.settings.pinHash) { closeAllSheets(); ui.locked = true; renderLock(); X.play('off'); }
@@ -1888,9 +1975,9 @@ document.addEventListener('click', async (ev) => {
     }
     case 'dismiss-passcode': try { localStorage.setItem('ledger.passcodeHint', '1'); } catch { /* ignore */ } render(); break;
     case 'toggle-hide': state.settings.hideAmounts = !state.settings.hideAmounts; commit(); break;
-    case 'toggle-theme': {
-      const flip = () => { state.settings.theme = state.settings.theme === 'light' ? 'dark' : 'light'; commit(); };
-      if (document.startViewTransition) { const vt = document.startViewTransition(flip); vt.ready?.catch(() => {}); vt.finished?.catch(() => {}); } else flip();
+    case 'set-theme': {
+      const flip = () => { state.settings.theme = el.dataset.v; S.save(state); render(); };
+      if (document.startViewTransition && !reducedMotion()) { const vt = document.startViewTransition(flip); vt.ready?.catch(() => {}); vt.finished?.catch(() => {}); } else flip();
       break;
     }
     case 'dismiss-install': try { localStorage.setItem(hintKey, '1'); } catch { /* ignore */ } render(); break;
@@ -1915,7 +2002,7 @@ document.addEventListener('click', async (ev) => {
       const p = byId(state.people, el.dataset.id);
       const ps = C.peopleSummary(state).find((x) => x.id === p.id);
       const v = await prompt1(`${p.name} paid you back`, 'Amount received', String(ps.owes / 100), { inputmode: 'decimal', ok: 'Log it' });
-      const amt = v && C.toPaise(v.replace(/,/g, ''));
+      const amt = v && amtOf(v);
       if (amt > 0) { state.entries.push({ id: S.uid(), createdAt: Date.now(), type: 'received', settles: true, personId: p.id, amount: amt, method: 'upi', date: today(), time: nowTime(), accountId: state.accounts[0].id, note: `${p.name} paid back` }); commit(`${rs(amt)} from ${p.name} logged`, 'income'); }
       break;
     }
@@ -1931,41 +2018,62 @@ document.addEventListener('click', async (ev) => {
     case 'settings-page': closeAllSheets(); settingsPage(el.dataset.page); break;
     case 'rewind': closeAllSheets(); openRewind(); break;
     case 'onboard': {
-      state.settings.openingCash = C.toPaise(($('#w-cash').value || '').replace(/[₹,]/g, ''));
-      state.settings.openingBank = C.toPaise(($('#w-bank').value || '').replace(/[₹,]/g, ''));
-      state.settings.onboarded = true; commit('Your ledger is ready'); window.scrollTo(0, 0);
+      state.settings.openingCash = amtOf($('#w-cash').value);
+      state.settings.openingBank = amtOf($('#w-bank').value);
+      state.settings.onboarded = true; lastBalance = C.balances(state).total; commit('Your ledger is ready'); window.scrollTo(0, 0);
       break;
     }
-    case 'demo': state = S.demoState(); commit('Demo data loaded'); window.scrollTo(0, 0); break;
+    case 'demo': swapState(S.demoState()); commit('Demo data loaded'); window.scrollTo(0, 0); break;
   }
 });
 // small taps for pickers, keys and tabs (bigger moments play their own sound)
 document.addEventListener('click', (ev) => {
-  const t = ev.target.closest('.key, .pad button, .tab, .chip, .opt, .seg button, .cat, .check, [data-switch], .icon-btn, .app-card, .qa');
+  const t = ev.target.closest('.key, .pad button, .tab, .chip, .opt, .seg button, .cat, .check, [data-switch], [role="switch"], .more-btn, .icon-btn, .app-card, .qa');
   if (!t) return;
-  X.play(t.matches('.key, .pad button') ? 'key' : t.matches('.app-card') ? 'open' : t.matches('[data-act="go-apps"]') ? 'close' : t.matches('.tab') ? 'tab' : t.matches('.check, [data-switch]') ? (t.querySelector('.on, .switch.on') || t.classList.contains('on') ? 'off' : 'on') : 'tick');
+  X.play(t.matches('.key, .pad button') ? 'key' : t.matches('.app-card') ? 'open' : t.matches('[data-act="go-apps"]') ? 'close' : t.matches('.tab') ? 'tab' : t.matches('.check, [data-switch], [role="switch"]') ? (t.querySelector('.on, .switch.on') || t.classList.contains('on') ? 'off' : 'on') : 'tick');
 }, true);
 addEventListener('keydown', (e) => { if (e.key === 'Escape' && sheetStack.length) closeSheet(); });
 // back gesture / back button: a hash that isn't a tab means the launcher
-const followHash = () => { const t = location.hash.slice(1); const next = TABS.includes(t) ? t : null; if (next !== ui.tab) { closeAllSheets(); ui.nav = next ? (ui.tab ? null : 'zoom-in') : 'zoom-out'; ui.tab = next; ui.hday = null; render(); window.scrollTo(0, 0); } };
+const followHash = () => { const t = location.hash.slice(1); const next = TABS.includes(t) ? t : null; if (next !== ui.tab) { closeAllSheets(); ui.nav = next ? (ui.tab ? null : 'zoom-in') : 'zoom-out'; ui.pushed = !!next && !ui.tab; ui.tab = next; ui.hday = null; render(); window.scrollTo(0, 0); } };
 addEventListener('hashchange', followHash);
 addEventListener('popstate', followHash);
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { ui.hiddenAt = Date.now(); return; }
+  if (document.hidden) {
+    ui.hiddenAt = Date.now();
+    // "Lock immediately": put the lock up as the app leaves, so the app switcher never shows your numbers
+    if (state.settings.pinHash && Number(state.settings.lockAfter) === 0) { ui.locked = true; renderLock(); }
+    return;
+  }
   if (state.settings.pinHash && ui.hiddenAt && Date.now() - ui.hiddenAt >= (state.settings.lockAfter ?? 60) * 1000) { ui.locked = true; renderLock(); }
   checkPendingPay();
-  settleHealth();
+  catchUp();
 });
+// follow the phone between light and dark when Appearance is on Auto
+matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => { if (state.settings.theme === 'auto') render(); });
 
 // ================================================================ recurring bills
-function postRecurring() {
+/**
+ * Everything that depends on the date. The installed app is usually resumed, not reloaded, so this runs
+ * when it comes back to the front and at midnight: bills that fell due, health days to settle, and a
+ * redraw if the day changed (otherwise "today" and "safe to spend" kept showing yesterday).
+ */
+function catchUp() {
+  postRecurring();
+  settleHealth();
+  if (ui.day !== today() && !sheetStack.length) { ui.hday = null; render(); }
+}
+function postRecurring({ boot = false } = {}) {
   const due = C.dueRecurring(state);
   for (const d of due) {
     const r = byId(state.recurring, d.recurringId);
     state.entries.push({ id: S.uid(), createdAt: Date.now(), type: 'spent', amount: r.amount, method: r.method, accountId: r.accountId, categoryId: r.categoryId, note: r.name, date: d.date, time: '09:00', recurringId: r.id });
     r.lastPosted = d.month;
   }
-  if (due.length) { S.save(state); setTimeout(() => toast(`${due.length} recurring bill${due.length === 1 ? '' : 's'} added`), 600); }
+  if (!due.length) return;
+  S.save(state);
+  lastBalance = C.balances(state).total;
+  if (!boot && !sheetStack.length) render();
+  setTimeout(() => toast(`${due.length} recurring bill${due.length === 1 ? '' : 's'} added`), 600);
 }
 
 // ================================================================ hide amounts
@@ -2013,7 +2121,7 @@ if (window.visualViewport) {
 
 // ================================================================ boot
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-postRecurring();
+postRecurring({ boot: true });
 lastBalance = C.balances(state).total;
 importStepsFromLink();
 settleHealth({ quietRender: true });
@@ -2024,7 +2132,6 @@ scheduleMidnight();
 // A home-screen app on iPhone usually resumes from memory instead of reloading, so it would
 // never notice a new version. Check whenever it comes to the front, and reload into the new
 // version as soon as it's installed (but never while you're halfway through filling in a sheet).
-let reloadWhenFree = false;
 function applyUpdate() { if (sheetStack.length) reloadWhenFree = true; else location.reload(); }
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   const hadController = !!navigator.serviceWorker.controller;

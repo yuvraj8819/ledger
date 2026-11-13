@@ -297,6 +297,47 @@ export function parseUpi(text) {
   return null;
 }
 
+// ---------- forgiving amounts ----------
+/**
+ * Reads an amount the way people type it: "1,200", "₹500/-", "Rs 80", "1.5k", "2 lakh", "120+80".
+ * Returns paise, or NaN when it can't be read.
+ */
+export function parseAmount(text) {
+  const t = String(text ?? '').toLowerCase().replace(/₹|rs\.?|inr|\/-|,|\s/g, '');
+  if (!t) return NaN;
+  const units = { k: 1e3, l: 1e5, lac: 1e5, lakh: 1e5, lakhs: 1e5, cr: 1e7, crore: 1e7 };
+  const u = t.match(/^(\d+(?:\.\d+)?)(k|lakhs?|lac|l|crore|cr)$/);
+  let v;
+  if (u) v = parseFloat(u[1]) * units[u[2]];
+  else { try { v = evaluate(t.replace(/x/g, '×')); } catch { return NaN; } }
+  return Number.isFinite(v) && v >= 0 ? Math.round(v * 100) : NaN;
+}
+
+// ---------- most used first ----------
+/** How often each value of `field` shows up in the latest entries: Map(value → count). */
+export function usage(entries, field, recent = 300) {
+  const m = new Map();
+  for (const e of entries.slice(-recent)) { const k = e[field]; if (k) m.set(k, (m.get(k) || 0) + 1); }
+  return m;
+}
+/** `list` with the most used items first. Items never used keep their original order. */
+export const byUsage = (list, counts) => list.map((x, i) => [x, i])
+  .sort((a, b) => (counts.get(b[0].id) || 0) - (counts.get(a[0].id) || 0) || a[1] - b[1]).map(([x]) => x);
+/** The single most used value, or `fallback`. */
+export function mostUsed(counts, fallback, allowed = null) {
+  let best = fallback, n = 0;
+  for (const [k, c] of counts) if (c > n && (!allowed || allowed.includes(k))) { best = k; n = c; }
+  return best;
+}
+
+/** The next date a recurring bill will be added to the ledger. */
+export function nextBillDate(r, today = isoDate()) {
+  const tm = monthKey(today);
+  let m = r.lastPosted ? nextMonth(r.lastPosted) : (r.startMonth || tm);
+  if (m < tm) m = tm;
+  return `${m}-${pad(Math.min(r.day, daysInMonth(`${m}-01`)))}`;
+}
+
 // ---------- export ----------
 export function toCSV(state) {
   const name = (list, id) => list.find((x) => x.id === id)?.name || '';

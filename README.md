@@ -25,7 +25,7 @@ Opening Ledger shows a launcher with three apps, each with today's headline: **L
 | **Pay** | Pay any UPI ID or pasted `upi://` link, or a saved payee. Opens the phone's UPI app with the amount filled in, then asks whether it went through and logs it. Upcoming recurring bills |
 | **Settings** | Money & bills (opening balances, monthly budget, recurring bills) · Accounts & tags (accounts, whose money, categories, people) · Rewind (off / weekly / monthly) · Privacy & lock (4-digit passcode, auto-lock, hide amounts, hidden entries) · Export & backup (CSV for Excel, JSON backup, restore) · This device (daily snapshots, demo data, erase) |
 
-Also: a **new entry** sheet for spent, received or *for someone* (with "they'll pay me back"), with "not from my balance" and "hide this entry" options. There's a **calculator** (the `=` button) whose answer becomes an entry, **search** by note, person, category or exact amount, undo after deleting, and light and dark themes.
+Also: a **new entry** sheet for spent, received or *for someone* (with "they'll pay me back"), with "not from my balance" and "hide this entry" options. There's a **calculator** (the button in the amount field) whose answer fills the amount, **search** by note, person, category or exact amount, undo after deleting, and light and dark themes.
 
 ### How the numbers work
 
@@ -61,11 +61,38 @@ A day with no step count waits. So does a count taken before 11:30 PM that's und
 - **Read a label**: photograph the nutrition table and on-device OCR ([Tesseract.js](https://tesseract.projectnaptha.com)) fills in the numbers for you to check. Then you enter the grams you ate.
 - The scanner and OCR libraries load from jsDelivr the first time you use them.
 
-### Look, motion and sound
+### Look, motion and sound (2.0)
 
-- **Glass:** cards, the tab bar, sheets and the lock screen are translucent and blur a slow-moving colour wash behind them. The tokens are the `--g-*` variables in the "v1.1" block of `css/app.css`.
-- **Motion:** screens rise in card by card, the balance counts up, meters and chart bars grow, the tab pill slides, and the theme switch opens out from its button. All of it is off when the phone has "reduce motion" turned on.
-- **Sound:** short taps, a chime when you save, a brighter one for money received, a low note for delete, a buzz for mistakes and a run of notes on unlock. They're generated in `js/sfx.js` with Web Audio, so there are no audio files. Android also gets a small vibration. Turn it all off in Settings → Sounds & haptics.
+The design idea is a **passbook**. The balance sits on a ruled page with a red margin line, lists are ledger lines inside one surface, and every figure is set in its own condensed face (Bricolage Grotesque, digits and money signs only, bundled in `fonts/figures.woff2`, OFL). Text uses the phone's own typeface. Each app wears its logo colour: red for money, green for steps, amber for food.
+
+- **Glass and depth:** only things that float (tab bar, + button, sheets, toasts, the lock) blur what's behind them and cast a shadow. Everything in the scrolling page is flat glass, which also keeps scrolling smooth on iPhone.
+- **Theme:** Settings → Theme has Dark, Light and Auto (follows the phone).
+- **Sound:** short taps, coins for money in and out, a low note for delete, a buzz for mistakes and a run of notes on unlock, generated in `js/sfx.js`. Turn it off in Settings → Sounds and haptics.
+
+The interface follows a checklist of UX and animation principles. Where each one shows up:
+
+| Principle | In the app |
+|---|---|
+| Squash & stretch | Buttons squash a little on press and spring back; the switch knob stretches as it travels |
+| Anticipation | The + turns as you press it, before the sheet opens |
+| Staging | A sheet dims everything behind it; the floating buttons step aside |
+| Follow through | The tab pill and toasts settle with a small overshoot |
+| Slow in & slow out | Everything eases; sheets arrive on an ease-out and leave on an ease-in |
+| Arcs | When money moves, a coin travels in an arc between the + button and the balance |
+| Secondary action | The balance counts to its new value and bumps as the coin lands |
+| Snappy timing | Presses answer in 70 ms; sheets open in about a third of a second and leave faster than they arrive |
+| Exaggerated feedback | The balance flashes green or red when it changes; a wrong amount or passcode shakes |
+| Solid drawing / depth | Shadows and blur mean "this floats". Flat means "this is the page" |
+| Fitts's law | The + button and the tab bar sit under the thumb; a long form's main button stays pinned at the bottom |
+| Bigger hit areas | Every button is at least 44 px; text links have padded touch areas |
+| Hick's law | A new entry shows amount, category, note and method; date, whose money and account are folded under one row. The top bar has three buttons, not four |
+| Miller's law | Settings is three short groups instead of nine loose cards |
+| Doherty threshold | Every tap gets an immediate visible or audible answer; long jobs (label reading) show progress |
+| Postel's law | Amount fields accept `1,200`, `₹500/-`, `Rs 80`, `1.5k`, `2 lakh` and sums like `120+80` |
+| Jakob's law | iOS-style grouped lists, switches, sheets you pull down, a back button top-left |
+| Frequency of use | Categories, whose-money tags, people and payees are listed most-used first; a new entry starts on the method and account you use most |
+
+Motion is off when the phone has "reduce motion" turned on. Switching tabs only fades; nothing slides.
 
 ### Passcode, hiding and updates
 
@@ -94,7 +121,8 @@ Open http://127.0.0.1:5178/tests/ with the server running. The page runs about 4
 
 ```
 index.html            page shell
-css/app.css           all styles; theme tokens at the top (dark default, [data-theme=light])
+css/app.css           all styles, one system; tokens at the top (dark default, [data-theme=light], per-app accent)
+fonts/figures.woff2   the figures typeface (digits, ₹ and signs only)
 js/calc.js            pure money logic, no DOM; everything the tests cover
 js/nutrition.js       targets from body & goal, scaling foods, label text and barcode results (pure, tested)
 js/foods.js           built-in food list and search

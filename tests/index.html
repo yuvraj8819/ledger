@@ -281,6 +281,25 @@ test('food database is sane: energy roughly matches macros', () => {
   const ids = new Set(F.FOODS.map((f) => f.id)); eq(ids.size, F.FOODS.length, 'unique ids');
 });
 
+test('amounts are read the way people type them', () => {
+  eq(C.parseAmount('1,200'), 120000); eq(C.parseAmount('₹500/-'), 50000); eq(C.parseAmount('Rs. 80'), 8000);
+  eq(C.parseAmount('1.5k'), 150000); eq(C.parseAmount('2 lakh'), 20000000); eq(C.parseAmount('120+80'), 20000);
+  eq(C.parseAmount('12.50'), 1250); eq(C.parseAmount('3x40'), 12000);
+  eq(Number.isNaN(C.parseAmount('')), true); eq(Number.isNaN(C.parseAmount('abc')), true); eq(Number.isNaN(C.parseAmount('1.2.3')), true);
+});
+test('most used first', () => {
+  const ents = [{ categoryId: 'b' }, { categoryId: 'c' }, { categoryId: 'b' }, { categoryId: null }, { categoryId: 'c' }, { categoryId: 'c' }];
+  const u = C.usage(ents, 'categoryId');
+  eq(C.byUsage([{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }], u).map((x) => x.id), ['c', 'b', 'a', 'd']);
+  eq(C.mostUsed(u, 'z'), 'c'); eq(C.mostUsed(new Map(), 'z'), 'z'); eq(C.mostUsed(u, 'z', ['b', 'q']), 'b');
+});
+test('next bill date respects when the bill starts', () => {
+  eq(C.nextBillDate({ day: 5, lastPosted: null, startMonth: '2026-12' }, '2026-11-13'), '2026-12-05');
+  eq(C.nextBillDate({ day: 20, lastPosted: null, startMonth: '2026-11' }, '2026-11-13'), '2026-11-20');
+  eq(C.nextBillDate({ day: 5, lastPosted: '2026-11' }, '2026-11-13'), '2026-12-05');
+  eq(C.nextBillDate({ day: 31, lastPosted: '2027-01' }, '2027-02-01'), '2027-02-28');
+});
+
 const failed = results.filter((r) => !r[1]);
 document.getElementById('sum').innerHTML = failed.length ? `<span class="bad">${failed.length} of ${results.length} failed</span>` : `<span class="ok">All ${results.length} tests passed</span>`;
 document.getElementById('out').innerHTML = results.map(([n, ok, m]) => `<div class="${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'} ${n}${m ? ' — ' + m : ''}</div>`).join('');

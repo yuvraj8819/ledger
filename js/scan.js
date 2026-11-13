@@ -98,6 +98,8 @@ export function pickPhoto() {
     i.type = 'file'; i.accept = 'image/*'; i.setAttribute('capture', 'environment');
     i.style.display = 'none';
     i.addEventListener('change', () => { resolve(i.files?.[0] || null); i.remove(); }, { once: true });
+    // closing the picker without choosing used to leave the caller waiting forever
+    i.addEventListener('cancel', () => { resolve(null); i.remove(); }, { once: true });
     document.body.append(i); i.click();
   });
 }
