@@ -29,11 +29,20 @@ export function defaultHealth() {
     foods: [],               // your scanned / label / hand-made foods
     recipes: [],             // meals you make: { id, name, servings, items }
     water: {},               // 'YYYY-MM-DD': [ml, ml, …]
+    plan: null,              // weight goal: { startKg, startDate, targetKg, targetDate, exerciseKcal, exerciseDays, sundayKcal, apply }
+    planSunday: null,        // calorie goal for Sundays while a plan with a different Sunday is driving the goal
     days: {},                // 'YYYY-MM-DD': { steps, stepsAt, stepsFrom, meals: [{ id, name, kcal, time, cheat }], rules? }
   };
 }
 
 export const rulesOf = (h) => ({ stepGoal: h.stepGoal, calorieGoal: h.calorieGoal, overMargin: h.overMargin, reward: h.reward, penalty: h.penalty });
+export const isSunday = (date) => parseDate(date).getDay() === 0;
+/** The rules for one date. A weight plan can give Sundays their own calorie goal; everything else is the same every day. */
+export function rulesFor(h, date) {
+  const r = rulesOf(h);
+  if (date && h.planSunday && h.plan?.apply && isSunday(date)) r.calorieGoal = h.planSunday;
+  return r;
+}
 export const caloriesOf = (day) => (day?.meals || []).reduce((s, m) => s + (Number(m.kcal) || 0), 0);
 
 /** What a day earns or costs under the given rules. Works for unfinished days too (a preview). */
@@ -88,7 +97,7 @@ export function desiredEntries(state, today = isoDate()) {
   const accountId = state.accounts.some((a) => a.id === h.accountId) ? h.accountId : state.accounts[0]?.id;
   for (const [date, day] of Object.entries(h.days)) {
     if (date < h.startDate || date >= today || !stepsFinal(date, day, day.rules?.stepGoal ?? h.stepGoal)) continue;
-    if (!day.rules) day.rules = rulesOf(h);
+    if (!day.rules) day.rules = rulesFor(h, date);
     const v = verdict(day, day.rules);
     const base = { date, time: '23:59', method: h.method === 'cash' ? 'cash' : 'upi', accountId };
     if (v.reward) out.set(`${date}:reward`, { ...base, type: 'received', amount: v.reward, sourceId: REWARD_SOURCE.id,

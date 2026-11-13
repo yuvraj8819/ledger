@@ -1,6 +1,6 @@
 // Nutrition maths: body targets, scaling foods, reading labels and barcode results.
 // Pure: no DOM, no storage, no network.
-import { addDays } from './calc.js';
+import { addDays, parseDate } from './calc.js';
 
 export const NUTRIENTS = [
   ['kcal', 'Calories', 'kcal'], ['p', 'Protein', 'g'], ['c', 'Carbs', 'g'], ['f', 'Fat', 'g'],
@@ -106,6 +106,119 @@ export function targets(p) {
   const water = Math.round(Math.min(4.5, Math.max(2, p.weightKg * 0.035)) * 10) / 10;
   if (teen) notes.push({ t: 'Check with a doctor', s: 'Under 18, BMI is read on a growth chart, and any weight-loss plan is best agreed with a doctor.' });
   return { bmr, maintenance, target, pace, protein, carbs, fat, fibre, sugarMax, sodiumMax: 2300, water, teen, notes };
+}
+
+// ---------------------------------------------------------------- weight goal planner
+const KCAL_PER_KG = 7700; // the usual estimate for a kilo of body weight; real bodies vary, so the plan re-checks against each weigh-in
+const dayDiff = (a, b) => Math.round((parseDate(b) - parseDate(a)) / 864e5);
+const roundTo = (x, n) => Math.round(x / n) * n;
+export const sundaysIn = (from, days) => { let n = 0; for (let i = 0; i < days; i++) if (parseDate(addDays(from, i)).getDay() === 0) n++; return n; };
+
+/**
+ * How much to eat to reach a target weight by a date.
+ *   profile       sex, age, heightCm, bodyFat? (weight comes from currentKg)
+ *   currentKg     weight now (the plan is worked out from today, so it re-adjusts as you weigh in)
+ *   targetKg      the weight you want
+ *   targetDate    'YYYY-MM-DD'
+ *   exerciseKcal  calories you burn in a workout (on top of normal daily life)
+ *   exerciseDays  workout days a week (1–7)
+ *   sundayKcal    what you plan to eat on Sundays (optional); the other days adjust so the plan still lands
+ *
+ * Burn = resting burn × 1.2 (a normal day without workouts) + the average daily exercise burn.
+ * Safety, as in the daily target: never eat below your resting burn, lose at most 1% of body weight a week
+ * (0.5% and at most 0.5 kg under 18), gain at most 0.5 kg a week. If the date asks for more than that, the plan
+ * shows the pace that is safe and the date it reaches the target instead.
+ */
+export function weightPlan({ profile, currentKg, targetKg, today, targetDate, exerciseKcal = 0, exerciseDays = 7, sundayKcal = null }) {
+  if (!profile || !(currentKg > 0) || !(targetKg > 0)) return { ok: false, why: 'missing' };
+  const t = targets({ ...profile, weightKg: currentKg, activity: 'sedentary', goal: 'maintain', pace: 0 });
+  if (!t) return { ok: false, why: 'missing' };
+  const days = dayDiff(today, targetDate);
+  if (!(days >= 1)) return { ok: false, why: 'date' };
+  const teen = profile.age < 18;
+  const change = Math.abs(currentKg - targetKg);
+  const dir = currentKg - targetKg > 0.05 ? 'lose' : targetKg - currentKg > 0.05 ? 'gain' : 'hold';
+  const exAvg = Math.round((Math.max(0, Number(exerciseKcal) || 0) * Math.min(7, Math.max(0, Number(exerciseDays) || 0))) / 7);
+  const bmr = t.bmr, base = t.maintenance, burn = base + exAvg;
+  const notes = [];
+
+  // what the date asks for
+  const askedDeficit = dir === 'hold' ? 0 : (change * KCAL_PER_KG) / days; // kcal a day
+  const askedPace = dir === 'hold' ? 0 : change / (days / 7);              // kg a week
+  const cap = dir === 'lose' ? (teen ? Math.min(0.5, currentKg * 0.005) : currentKg * 0.01) : dir === 'gain' ? 0.5 : Infinity;
+  const askedIntake = dir === 'lose' ? burn - askedDeficit : dir === 'gain' ? burn + askedDeficit : burn;
+
+  // what is safe
+  let intake = askedIntake, pace = askedPace, horizon = days, tooFast = false, reason = null, safe = null;
+  if (dir === 'lose') {
+    const floor = Math.max(bmr, burn - (cap * KCAL_PER_KG) / 7);
+    if (askedIntake < floor) {
+      tooFast = true;
+      reason = askedIntake < bmr && floor === bmr ? 'floor' : 'pace';
+      intake = floor; pace = ((burn - floor) * 7) / KCAL_PER_KG;
+      horizon = Math.ceil((change / pace) * 7);
+    }
+  } else if (dir === 'gain') {
+    const ceil = burn + (cap * KCAL_PER_KG) / 7;
+    if (askedIntake > ceil) { tooFast = true; reason = 'pace'; intake = ceil; pace = cap; horizon = Math.ceil((change / pace) * 7); }
+  }
+  if (tooFast) safe = { kcal: roundTo(intake, 5), paceKgWeek: Math.round(pace * 100) / 100, days: horizon, date: addDays(today, horizon) };
+
+  // Sundays: the rest of the week makes up the difference
+  const sundays = sundaysIn(today, horizon);
+  const others = horizon - sundays;
+  let weekday = intake, sunday = intake, sundayAdjusted = false, maxSunday = null;
+  const want = sundayKcal != null && sundayKcal !== '' ? Number(sundayKcal) : null;
+  if (want > 0 && sundays > 0 && others > 0) {
+    const budget = intake * horizon;
+    sunday = want; weekday = (budget - sundays * sunday) / others;
+    if (dir === 'lose' && weekday < bmr) {
+      // Sundays that big would push the other days under the resting burn
+      maxSunday = Math.floor((budget - others * bmr) / sundays);
+      sunday = Math.max(0, maxSunday); weekday = bmr; sundayAdjusted = true;
+    }
+  }
+  weekday = roundTo(weekday, 5); sunday = roundTo(sunday, 5);
+  const weeklyTotal = weekday * 6 + sunday;
+
+  // notes
+  if (dir === 'hold') notes.push({ t: 'Same weight', s: 'Eat about your daily burn to hold your weight.' });
+  if (tooFast && reason === 'floor') notes.push({ t: `That date needs under your resting burn`, s: `Reaching ${targetKg} kg by then would mean eating less than the ${bmr} kcal your body uses at rest. Eating that little for weeks costs muscle.`, warn: true });
+  if (tooFast && reason === 'pace') notes.push({ t: dir === 'lose' ? `That's faster than ${r1(cap)} kg a week` : 'That’s faster than 0.5 kg a week', s: `${r1(askedPace)} kg a week is more than is safe${teen && dir === 'lose' ? ' while you are still growing' : ''}.`, warn: true });
+  if (sundayAdjusted) notes.push({ t: 'Sundays held lower', s: `${want} kcal on Sundays would push the other days under your resting burn (${bmr} kcal). The most Sundays can be is about ${sunday} kcal.`, warn: true });
+  if (dir === 'lose' && profile.heightCm && !teen) {
+    const b = r1(targetKg / (profile.heightCm / 100) ** 2);
+    if (b < 18.5) notes.push({ t: `${targetKg} kg is a BMI of ${b}`, s: 'That is under the healthy range for your height. A doctor or dietitian can help set a safer target.', warn: true });
+  }
+  if (teen) notes.push({ t: 'Check with a doctor', s: 'Under 18, any weight-loss plan is best agreed with a doctor.' });
+
+  return {
+    ok: true, dir, change: r1(change), days, weeks: r1(days / 7),
+    bmr, base, exAvg, burn,
+    asked: { kcal: roundTo(askedIntake, 5), paceKgWeek: Math.round(askedPace * 100) / 100, deficit: Math.round(askedDeficit) },
+    tooFast, reason, safe,
+    horizon, endDate: addDays(today, horizon), sundays,
+    weekday, sunday, sundayAdjusted, maxSunday, weeklyTotal,
+    paceKgWeek: Math.round(pace * 100) / 100, dailyGap: Math.round(Math.abs(burn - intake)),
+    notes,
+  };
+}
+
+/** Where you should be today on a straight line from where the plan started to the target, and where you are. */
+export function planProgress(plan, weights, today) {
+  const total = dayDiff(plan.startDate, plan.targetDate);
+  const done = Math.min(Math.max(dayDiff(plan.startDate, today), 0), total);
+  const expected = total > 0 ? plan.startKg + (plan.targetKg - plan.startKg) * (done / total) : plan.targetKg;
+  const last = (weights || []).slice().sort((a, b) => a.date.localeCompare(b.date)).at(-1);
+  const now = last ? last.kg : plan.startKg;
+  const moved = r1(plan.startKg - now);                // positive = lost
+  const goalMove = r1(plan.startKg - plan.targetKg);   // positive = to lose
+  const off = r1(now - expected);                      // positive = heavier than the line
+  const losing = goalMove > 0;
+  const ahead = losing ? off < -0.3 : off > 0.3;
+  const behind = losing ? off > 0.3 : off < -0.3;
+  const pct = goalMove === 0 ? 1 : Math.max(0, Math.min(1, moved / goalMove));
+  return { expected: r1(expected), now, moved, off, status: ahead ? 'ahead' : behind ? 'behind' : 'on', pct, daysLeft: Math.max(0, total - done) };
 }
 
 // ---------------------------------------------------------------- weight trend

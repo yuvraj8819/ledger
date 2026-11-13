@@ -55,11 +55,31 @@ A day with no step count waits. So does a count taken before 11:30 PM that's und
 ### Food: targets, search, barcodes and labels
 
 - **Body & goal** (first thing in setup): sex, age, height, weight, optional body fat, activity and goal. Ledger works out maintenance (Katch-McArdle with body fat, Mifflin-St Jeor without), a daily target, protein / carbs / fat, fibre, a sugar cap and water. Safety limits: never below your resting burn, weight loss capped at 1% of body weight a week, and under 18 at 0.5% (max 0.5 kg) with carbs held at 130 g or more and no adult BMI label. The target becomes the calorie goal for the overeating rule, and logging a new weight updates it.
-- **Built-in foods** (`js/foods.js`, about 420): Indian home food (rice, dal, rajma, chole, sabzi, rotis, South Indian, street food, sweets), quick foods (Maggi and other noodles, chips, biscuits, chocolate), drinks and coffee, and the Indian menus of Subway (6-inch and footlong), Domino's (regular, medium, large, sides), Pizza Hut, Taco Bell, California Burrito, McDonald's, KFC, Burger King and Starbucks. These are estimates. Home cooking varies, and chains change recipes.
+- **Built-in foods** (`js/foods.js` and `js/foods_more.js`, about 1,000): browse by group or search by name, Hindi name or dish type.
+  - **Indian:** rice and biryani, dal, rajma, chole, kadhi (with and without pakoda), sabzi and paneer dishes, non-veg curries and kebabs, rotis and breads (jowar, bajra, makki, missi, kulcha, naan), breakfast (besan, moong and oats chilla, dosa and idli varieties, thepla, parathas, poha and upma), chaat and street food, sweets and desserts.
+  - **Momos:** steamed, fried, pan-fried, kurkure, tandoori, afghani, peri peri, schezwan, chilli and jhol, in veg, chicken and paneer, plus chutney and mayo dips.
+  - **WOW! Momo:** its momo formats, MoBurgs, chocolate momo, and the Wow! China noodles, rice, starters, soups and drinks. WOW! doesn't publish a complete menu with nutrition, so these are the formats its outlets list, with estimated numbers.
+  - **Indo-Chinese:** chowmein and hakka noodles, fried rice, manchurian dry and gravy, chilli paneer, chilli chicken, dragon chicken, lollipop, spring rolls, chopsuey, soups, thukpa and dim sum.
+  - **Vegetables and fruits** per 100 g (type grams to log any amount), nuts and seeds, juices and shakes, namkeen and packaged snacks, and cafe and fast food.
+  - **Chains:** the Indian menus of Subway, Domino's, Pizza Hut, Taco Bell, California Burrito, McDonald's, KFC, Burger King and Starbucks.
+  These are estimates for typical Indian portions. Home cooking varies with oil and quantity, and chains change recipes. A test checks that every row's calories agree with its protein, carbs and fat. For anything in a packet, scan the barcode or read the label for exact numbers.
 - **Log by servings or grams**, with protein, carbs, fat, fibre, sugar and sodium. **Meals**: build a dish from ingredients once and log it in one tap. **Quick add** takes calories alone. There's also **water** and **weight** with a 10-day average.
 - **Scan a barcode** with the camera, a photo or the typed number. The lookup goes to [Open Food Facts](https://world.openfoodfacts.org), a free public database, and only the barcode number is sent. Products are saved to your foods, so a second scan works offline.
 - **Read a label**: photograph the nutrition table and on-device OCR ([Tesseract.js](https://tesseract.projectnaptha.com)) fills in the numbers for you to check. Then you enter the grams you ate.
 - The scanner and OCR libraries load from jsDelivr the first time you use them.
+
+### Weight goal planner
+
+Diet & food → Body → **Plan my weight goal**. Set the weight you have now, the weight you want, the date, how many calories a workout burns and how many days a week you do it, and optionally what you plan to eat on Sundays. It shows how much to eat each day to land on that date.
+
+- **What you burn:** resting burn × 1.2 (a normal day without workouts) plus the average daily exercise burn. Example: 900 kcal of exercise a day on top of a 2,129 kcal normal day is 3,029 kcal burned.
+- **The deficit:** a kilo of body weight is taken as 7,700 kcal. Losing 6 kg in 56 days is 825 kcal a day under your burn, so about 2,200 kcal a day to eat.
+- **Sundays:** the plan counts the Sundays between now and the date. If you plan to eat 2,500 kcal on Sundays, the other days come down just enough that the whole period still adds up. A Sunday figure so big that it would push the other days under your resting burn is capped, and the plan says so.
+- **Safety:** it never plans below your resting burn, never asks for more than 1% of body weight a week (0.5% under 18), and holds gain to 0.5 kg a week. If the date asks for more than that, it shows the pace that is safe and the date that reaches your target at that pace.
+- **It follows you:** the plan is worked out from today and from your latest weigh-in, so each weigh-in adjusts the daily number. Ahead of plan gives you a little more, behind gives you a little less.
+- **Daily calorie goal:** switched on by default. Your Today screen and the overeating rule then use the plan's number, and Sundays get their own goal. Turn it off in the plan, or edit the goal by hand in Health → Setup, and the goal goes back to the target from Body & goal.
+
+The 7,700 figure is the usual rule of thumb, not a law. Water, salt and muscle move the scale around, so look at the trend over a week or two.
 
 ### Look, motion and sound (2.0)
 
@@ -126,6 +146,7 @@ fonts/figures.woff2   the figures typeface (digits, ₹ and signs only)
 js/calc.js            pure money logic, no DOM; everything the tests cover
 js/nutrition.js       targets from body & goal, scaling foods, label text and barcode results (pure, tested)
 js/foods.js           built-in food list and search
+js/foods_more.js      about 600 more foods: Indian, Indo-Chinese, momos, vegetables, fruits, snacks, fast food
 js/scan.js            camera barcode scanning, Open Food Facts lookup, label OCR
 js/health.js          steps + food rules: verdicts, settling into entries, step parsing (pure, tested)
 js/store.js           saved data shape, localStorage, snapshots, backups, PIN hashing, demo data

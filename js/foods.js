@@ -3,6 +3,8 @@
 // portion, and chains change recipes. For anything in a packet, scanning the barcode or the label is exact.
 //
 // Row: [name, serving label, grams (or ml), kcal, protein g, carbs g, fat g, fibre g, sugar g, sodium mg, aliases?]
+// More Indian food, Indo-Chinese, momos, vegetables, fruit, snacks and fast food are in foods_more.js.
+import { MORE } from './foods_more.js';
 
 const DATA = {
   'Rice & biryani': ['Indian', [
@@ -395,16 +397,18 @@ const DATA = {
   ]],
 };
 
+// brand groups that are kinds of food, not companies: no brand name shown beside the food
+const GENERIC = ['Indian', 'Basics', 'Quick foods', 'Drinks', 'Momos', 'Indo-Chinese', 'Vegetables', 'Fruits', 'Dry fruits & nuts', 'Snacks', 'Fast food'];
 const slug = (s) => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const mk = (group, brand, [name, label, g, kcal, p, c, f, fib, sug, na, aliases = ''], extra = {}) => ({
-  id: `db:${slug(brand + ' ' + name + (extra.size || ''))}`, name: extra.name || name, brand: ['Indian', 'Basics', 'Quick foods', 'Drinks'].includes(brand) ? '' : brand,
-  group, brandGroup: brand, aliases, serving: { label: extra.label || label, g: extra.g || g }, unit: brand === 'Drinks' || brand === 'Starbucks' || /milk|lassi|chaas|kool/i.test(name) ? 'ml' : 'g',
+  id: `db:${slug(brand + ' ' + name + (extra.size || ''))}`, name: extra.name || name, brand: GENERIC.includes(brand) ? '' : brand,
+  group, brandGroup: brand, aliases, serving: { label: extra.label || label, g: extra.g || g }, unit: brand === 'Drinks' || brand === 'Starbucks' || /\b(milk|lassi|chaas|kool|juice|soup|shake|coconut water|lemonade|jaljeera|panna|thandai|chai|coffee)\b/i.test(name) ? 'ml' : 'g',
   n: { kcal, p, c, f, fib, sug, na }, source: 'db',
 });
 const times = (row, x) => { const r = row.slice(); for (const i of [2, 3, 4, 5, 6, 7, 8, 9]) r[i] = i === 3 || i === 9 || i === 2 ? Math.round(row[i] * x) : Math.round(row[i] * x * 10) / 10; return r; };
 
 export const FOODS = [];
-for (const [group, [brand, rows]] of Object.entries(DATA)) {
+for (const [group, [brand, rows]] of Object.entries({ ...DATA, ...MORE })) {
   for (const row of rows) {
     FOODS.push(mk(group, brand, row));
     // a footlong is two 6-inch subs; a medium Domino's pizza is about twice a regular, a large about 3.4×
@@ -415,7 +419,7 @@ for (const [group, [brand, rows]] of Object.entries(DATA)) {
     }
   }
 }
-export const BRAND_GROUPS = [...new Set(Object.values(DATA).map(([b]) => b))];
+export const BRAND_GROUPS = [...new Set(Object.values({ ...DATA, ...MORE }).map(([b]) => b))];
 
 const norm = (s) => String(s || '').toLowerCase().normalize('NFKD').replace(/[’'`]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 const SYN = { maggie: 'maggi', daal: 'dal', chawal: 'rice', roti: 'roti chapati', dominos: 'dominos', mcd: 'mcdonalds', burrito: 'burrito' };
@@ -424,7 +428,7 @@ const SYN = { maggie: 'maggi', daal: 'dal', chawal: 'rice', roti: 'roti chapati'
 export function searchFoods(query, mine = [], { limit = 40, brandGroup = null } = {}) {
   const words = norm(query).split(' ').filter(Boolean).map((w) => SYN[w] || w);
   const pool = [...mine, ...FOODS].filter((f) => !brandGroup || f.brandGroup === brandGroup || (brandGroup === 'Mine' && f.source !== 'db'));
-  if (!words.length) return pool.slice(0, brandGroup ? 200 : limit);
+  if (!words.length) return pool.slice(0, brandGroup ? 900 : limit);
   const scored = [];
   for (const [i, f] of pool.entries()) {
     const name = norm(f.name), hay = `${name} ${norm(f.brand)} ${norm(f.brandGroup)} ${norm(f.group)} ${norm(f.aliases)} ${norm(f.serving?.label)}`;

@@ -287,9 +287,10 @@ function appsView() {
   const safe = C.safeToSpend(state);
   const h = state.health, t = today();
   const td = h.days[t] || {};
-  const v = H.verdict(td, H.rulesOf(h));
+  const v = H.verdict(td, H.rulesFor(h, t));
   const waiting = h.enabled ? H.waitingDays(h) : [];
   const tg = TG();
+  const goalNow = H.rulesFor(h, t).calorieGoal; // Sundays can have their own goal
   const eaten = N.totals(td.meals || []);
   const water = (h.water[t] || []).reduce((s, x) => s + x, 0);
   const hr = new Date().getHours();
@@ -309,8 +310,8 @@ function appsView() {
       ${card('health', I.steps, h.enabled ? `${v.stepsKnown ? nf0.format(v.steps) : '—'}<small> / ${nf0.format(h.stepGoal)} steps</small>` : 'Earn for walking',
     h.enabled ? (waiting.length ? `${esc(fmtDay(waiting[0]))} is waiting for its steps` : `If today ended now: ${v.net ? rs(v.net, { sign: true }) : '₹0'}`) : `+${rs(h.reward)} for ${nf0.format(h.stepGoal)} steps, −${rs(h.penalty)} if not`,
     { bar: h.enabled ? pct(v.steps || 0, h.stepGoal) : null, tag: waiting.length ? '<span class="tag warn">sync</span>' : '' })}
-      ${card('food', I.food, `${nf0.format(Math.max(0, h.calorieGoal - eaten.kcal))}<small> kcal left</small>`, `${nf0.format(eaten.kcal)} of ${nf0.format(h.calorieGoal)} eaten`,
-    { bar: pct(eaten.kcal, h.calorieGoal), chips: (tg ? chip('Protein', `${Math.round(eaten.p)}/${tg.protein} g`) : '') + chip('Water', `${(water / 1000).toFixed(1)} L`) })}
+      ${card('food', I.food, `${nf0.format(Math.max(0, goalNow - eaten.kcal))}<small> kcal left</small>`, `${nf0.format(eaten.kcal)} of ${nf0.format(goalNow)} eaten`,
+    { bar: pct(eaten.kcal, goalNow), chips: (tg ? chip('Protein', `${Math.round(eaten.p)}/${tg.protein} g`) : '') + chip('Water', `${(water / 1000).toFixed(1)} L`) })}
     </div>
     <p class="foot-note">The three are linked: your steps and food settle into your ledger balance every night.</p>`;
 }
@@ -1192,7 +1193,7 @@ function healthView() {
   if (!h.enabled) return healthIntro();
   const t = today(), d = healthDay();
   const day = h.days[d] || { steps: null, meals: [] };
-  const rules = day.rules || H.rulesOf(h);
+  const rules = day.rules || H.rulesFor(h, d);
   const v = H.verdict(day, rules);
   const stepPct = v.stepsKnown ? Math.min(1, v.steps / rules.stepGoal) : 0;
   const waiting = H.waitingDays(h);
@@ -1230,7 +1231,7 @@ function daysView() {
   for (let x = C.addDays(t, -1); x >= h.startDate && hist.length < 60; x = C.addDays(x, -1)) hist.push(x);
   const all = H.healthSummary(state, h.startDate, t);
   const histRow = (x) => {
-    const r = h.days[x] || {}; const rr = r.rules || H.rulesOf(h); const vv = H.verdict(r, rr);
+    const r = h.days[x] || {}; const rr = r.rules || H.rulesFor(h, x); const vv = H.verdict(r, rr);
     const done = H.stepsFinal(x, r, rr.stepGoal);
     return `<button class="row" data-act="h-day" data-d="${x}"><div class="ic ${done ? (vv.net >= 0 ? 'in' : 'out') : ''}">${done ? (vv.penalty ? '✕' : '✓') : '…'}</div>
       <div class="mid"><div class="t">${esc(fmtDay(x))}</div><div class="s">${vv.stepsKnown ? nf0.format(vv.steps) : '—'} steps · ${kcal(vv.kcal)}${vv.cheat ? ' · cheat meal' : ''}</div></div>
@@ -1259,7 +1260,7 @@ function foodView() {
   const h = state.health;
   const t = today(), d = healthDay();
   const day = h.days[d] || { steps: null, meals: [] };
-  const rules = day.rules || H.rulesOf(h);
+  const rules = day.rules || H.rulesFor(h, d);
   const v = H.verdict(day, rules);
   const limit = rules.calorieGoal + rules.overMargin;
   const kcalPct = limit ? Math.min(1, v.kcal / limit) : 0;
@@ -1286,12 +1287,13 @@ function bodyView() {
   const h = state.health; const p = h.profile; const tg = TG();
   if (!p) return `<section class="card hero"><div class="eyebrow">Body & goal</div><p class="muted" style="margin:8px 0 14px;font-size:14.5px">Tell Balance your age, height, weight and goal. It works out your calories, protein, carbs, fat and water, and your calorie target becomes the limit for the overeating rule.</p><button class="btn accent" data-act="h-body">Set it up</button></section>${weightCard()}`;
   const b = N.bmi(p); const bl = N.bmiLabel(b, p.age);
-  return `<section class="card hero">
-    <div class="kc-row"><div><div class="eyebrow">Daily target</div><div class="h-big num">${nf0.format(tg.target)}<small>kcal</small></div></div><div class="eaten"><span class="eyebrow">Maintenance</span><b class="num">${nf0.format(tg.maintenance)}</b></div></div>
+  return `${planCard()}
+  <section class="card hero" style="margin-top:12px">
+    <div class="kc-row"><div><div class="eyebrow">${h.plan?.apply ? 'Daily target from your body' : 'Daily target'}</div><div class="h-big num">${nf0.format(tg.target)}<small>kcal</small></div></div><div class="eaten"><span class="eyebrow">Maintenance</span><b class="num">${nf0.format(tg.maintenance)}</b></div></div>
     <div class="tg-grid"><div><span>Protein</span><b class="num">${tg.protein} g</b></div><div><span>Carbs</span><b class="num">${tg.carbs} g</b></div><div><span>Fat</span><b class="num">${tg.fat} g</b></div><div><span>Fibre</span><b class="num">${tg.fibre} g</b></div><div><span>Sugar max</span><b class="num">${tg.sugarMax} g</b></div><div><span>Water</span><b class="num">${tg.water} L</b></div></div>
     <div class="divider"></div>
     <div class="s faint" style="font-size:13px">${p.age} yrs · ${p.heightCm} cm · ${p.weightKg} kg${p.bodyFat ? ` · ${p.bodyFat}% fat` : ''} · BMI ${b}${bl ? ` (${bl})` : ''} · ${esc(N.GOALS[p.goal])}${p.goal !== 'maintain' ? ` ${tg.pace} kg/wk${tg.pace < p.pace ? ' (capped)' : ''}` : ''}</div>
-    ${h.calorieGoal !== tg.target ? `<p class="faint" style="font-size:12.5px;margin:8px 0 0">Your calorie goal is set by hand to ${kcal(h.calorieGoal)} in Health → Setup.</p>` : ''}
+    ${h.plan?.apply ? `<p class="faint" style="font-size:12.5px;margin:8px 0 0">Your calorie goal follows your weight plan: ${kcal(h.calorieGoal)}.</p>` : h.calorieGoal !== tg.target ? `<p class="faint" style="font-size:12.5px;margin:8px 0 0">Your calorie goal is set by hand to ${kcal(h.calorieGoal)} in Health → Setup.</p>` : ''}
     <button class="btn ghost" data-act="h-body" style="margin-top:14px">${I.edit} Change body & goal</button>
   </section>
   ${weightCard()}
@@ -1300,11 +1302,12 @@ function bodyView() {
 
 function rulesSheet(first = false) {
   const h = state.health;
+  let planReleased = false;
   const r = { ...h, accountId: h.accountId || state.accounts[0]?.id };
   const num = (id, label, val, hint, suffix = '') => `<div class="field"><label class="eyebrow" for="${id}">${label}</label><div class="amount-box">${suffix === '₹' ? '<span class="cur">₹</span>' : ''}<input id="${id}" class="num" inputmode="numeric" value="${val}" style="font-size:24px">${suffix && suffix !== '₹' ? `<span class="faint" style="font-size:15px;padding-right:6px">${suffix}</span>` : ''}</div>${hint ? `<p class="faint" style="font-size:12.5px;margin:6px 2px 0">${hint}</p>` : ''}</div>`;
   const body = () => `
     ${first ? `<p class="lead" style="margin-top:0">Your calorie goal comes from your body & goal. The rest is set the way you described, and you can change any of it.</p>` : ''}
-    ${num('r-kcal', 'Daily calorie goal', r.calorieGoal, TG() ? `Your target from Body & goal is ${nf0.format(TG().target)} kcal. Change it here to set your own.` : '', 'kcal')}
+    ${num('r-kcal', 'Daily calorie goal', r.calorieGoal, h.plan?.apply ? 'Your weight plan sets this. Changing it here turns that off.' : TG() ? `Your target from Body & goal is ${nf0.format(TG().target)} kcal. Change it here to set your own.` : '', 'kcal')}
     ${num('r-margin', 'Overeating starts at', r.overMargin, 'Calories over your goal that cost the penalty. A cheat meal always does.', 'kcal over')}
     ${num('r-steps', 'Daily step goal', r.stepGoal, '', 'steps')}
     <div class="opts" style="margin-top:0">
@@ -1331,13 +1334,14 @@ function rulesSheet(first = false) {
     if (!(r.calorieGoal >= 800 && r.calorieGoal <= 6000)) return warn('Calorie goal should be between 800 and 6,000');
     if (!(r.stepGoal >= 1000) || !(r.overMargin >= 0) || !(r.reward >= 0) || !(r.penalty >= 0)) return warn('Check the numbers');
     if (TG()) h.autoGoal = r.calorieGoal === TG().target;
+    if (h.plan?.apply && r.calorieGoal !== h.calorieGoal) { h.plan.apply = false; h.planSunday = null; planReleased = true; }
     Object.assign(h, { calorieGoal: r.calorieGoal, overMargin: r.overMargin, stepGoal: r.stepGoal, reward: r.reward, penalty: r.penalty, method: r.method, accountId: r.accountId });
     if (!h.enabled) { h.enabled = true; h.startDate = h.startDate && !first ? h.startDate : today(); }
     // today isn't settled yet, so it picks up the new rules too
     if (h.days[today()]) delete h.days[today()].rules;
     closeSheet();
     ui.tab = 'health'; history.replaceState(null, '', '#health');
-    healthCommit(first ? 'Health is on. Today counts.' : 'Saved');
+    healthCommit(first ? 'Health is on. Today counts.' : planReleased ? 'Saved. The weight plan no longer sets your calorie goal' : 'Saved');
     if (first) setTimeout(() => connectSheet(), 700);
   });
 }
@@ -1369,7 +1373,7 @@ function foodSheet(d, meal) {
   const h = state.health;
   const m = meal ? { ...meal } : { name: '', kcal: '', cheat: false, time: d === today() ? nowTime() : '13:00' };
   const freq = meal ? [] : H.frequentFoods(h);
-  const rules = h.days[d]?.rules || H.rulesOf(h);
+  const rules = h.days[d]?.rules || H.rulesFor(h, d);
   const before = H.caloriesOf(h.days[d]) - (meal ? Number(meal.kcal) || 0 : 0);
   const sh = openSheet(meal ? 'Edit food' : 'Quick add', `
     ${freq.length ? `<div class="eyebrow label" style="margin-top:0">Again?</div><div class="opts" style="flex-wrap:wrap">${freq.map((f, i) => `<button class="opt" data-ff="${i}">${esc(f.name)} · ${nf0.format(f.kcal)}</button>`).join('')}</div>` : ''}
@@ -1534,6 +1538,129 @@ function weightCard() {
   </section>`;
 }
 
+// ---------------------------------------------------------------- weight goal plan
+const latestWeight = () => { const h = state.health; const w = h.weights.slice().sort((a, b) => a.date.localeCompare(b.date)).at(-1); return w ? w.kg : h.profile?.weightKg || 0; };
+/** The plan as it stands today: worked out from your latest weight, so it adjusts as you weigh in. */
+function planNow() {
+  const h = state.health, pl = h.plan;
+  if (!pl || !h.profile) return null;
+  return N.weightPlan({ profile: h.profile, currentKg: latestWeight(), targetKg: pl.targetKg, today: today(), targetDate: pl.targetDate, exerciseKcal: pl.exerciseKcal, exerciseDays: pl.exerciseDays, sundayKcal: pl.sundayKcal });
+}
+/** While a plan drives the goal, today's calorie goal (and the Sunday one) follow it. Returns true if anything changed. */
+function syncPlanGoal() {
+  const h = state.health;
+  if (!h.plan?.apply) return false;
+  const r = planNow();
+  if (!r?.ok) return false;
+  const sun = r.sunday !== r.weekday ? r.sunday : null;
+  if (h.calorieGoal === r.weekday && h.autoGoal === false && h.planSunday === sun) return false;
+  h.calorieGoal = r.weekday; h.autoGoal = false; h.planSunday = sun;
+  if (h.days[today()]) delete h.days[today()].rules; // today isn't settled yet, so it follows the new goal
+  return true;
+}
+/** Hand the calorie goal back to the body target. */
+function releasePlanGoal() {
+  const h = state.health; h.planSunday = null;
+  const tg = TG(); if (tg) { h.calorieGoal = tg.target; h.autoGoal = true; }
+}
+
+function planResultHtml(r, { targetKg, targetDate }) {
+  if (!r.ok) return `<p class="faint" style="margin:14px 2px 0">${r.why === 'date' ? 'Pick a date after today.' : 'Fill in your current and target weight to see the plan.'}</p>`;
+  const up = r.dir === 'gain', hold = r.dir === 'hold';
+  return `<div class="plan-out">
+    <div class="eyebrow">${hold ? 'To hold your weight, eat about' : 'Eat about'}</div>
+    <div class="h-big num">${nf0.format(r.weekday)}<small>kcal a day</small></div>
+    ${r.sundays && r.sunday !== r.weekday ? `<div class="plan-sun">${r.sundayAdjusted ? 'Sundays up to' : 'Sundays'} <b class="num">${nf0.format(r.sunday)} kcal</b> · other days <b class="num">${nf0.format(r.weekday)}</b></div>` : ''}
+    ${hold ? '' : `<div class="tg-grid plan-facts">
+      <div><span>${up ? 'Gain' : 'Lose'}</span><b class="num">${r.change} kg</b></div>
+      <div><span>By</span><b>${esc(fmtDay(r.endDate))}</b></div>
+      <div><span>Days</span><b class="num">${r.horizon}</b></div>
+      <div><span>Pace</span><b class="num">${r.paceKgWeek} kg/wk</b></div>
+      <div><span>You burn</span><b class="num">${nf0.format(r.burn)}</b></div>
+      <div><span>${up ? 'Extra' : 'Deficit'}</span><b class="num">${nf0.format(r.dailyGap)}</b></div>
+    </div>`}
+    <p class="faint plan-how">You burn about ${nf0.format(r.burn)} a day: ${nf0.format(r.base)} resting and daily life${r.exAvg ? `, plus ${nf0.format(r.exAvg)} from exercise` : ''}.${r.sundays ? ` ${r.sundays} Sunday${r.sundays === 1 ? '' : 's'} in this plan.` : ''}</p>
+    ${r.tooFast ? `<div class="notes"><div class="note warn"><b>${targetDate ? `${esc(fmtDay(targetDate))} is too soon` : 'That date is too soon'}</b><span>The safe plan reaches ${targetKg} kg on ${esc(fmtDay(r.safe.date))} instead, at ${r.safe.paceKgWeek} kg a week.</span></div></div>` : ''}
+    <div class="notes">${r.notes.map((n) => `<div class="note ${n.warn ? 'warn' : ''}"><b>${esc(n.t)}</b><span>${esc(n.s)}</span></div>`).join('')}</div>
+  </div>`;
+}
+
+function planCard() {
+  const h = state.health, pl = h.plan;
+  const head = (edit) => `<div class="head"><div class="eyebrow">${I.scale} Weight goal</div>${edit ? `<button class="link" data-act="h-plan">Edit</button>` : ''}</div>`;
+  if (!pl) return `<section class="card h-card plan-card">${head(false)}
+    <p class="muted" style="margin:10px 0 14px;font-size:14.5px">Pick the weight you want and a date. Balance works out how much to eat each day to get there, with room for Sundays and your exercise.</p>
+    <button class="btn accent" data-act="h-plan">Plan my weight goal</button></section>`;
+  const r = planNow();
+  const pr = N.planProgress(pl, h.weights, today());
+  const goalMove = pl.startKg - pl.targetKg;
+  const done = Math.max(0, goalMove >= 0 ? pr.moved : -pr.moved);
+  const say = pr.status === 'on' ? 'On track' : pr.status === 'ahead' ? `${Math.abs(pr.off)} kg ahead of plan` : `${Math.abs(pr.off)} kg behind. Today's number already makes up for it`;
+  return `<section class="card h-card plan-card">${head(true)}
+    <div class="plan-line"><b class="num">${latestWeight()} kg</b><span class="faint">to ${pl.targetKg} kg by ${esc(fmtDay(pl.targetDate))}</span></div>
+    <div class="meter ${pr.status === 'behind' ? 'low' : 'good'}" style="margin-top:10px"><i style="width:${(pr.pct * 100).toFixed(1)}%"></i></div>
+    <div class="foot">${r?.ok && r.dir === 'hold' ? 'Holding your weight.' : `${r1(done)} of ${r1(Math.abs(goalMove))} kg done · ${say}`}</div>
+    ${r ? planResultHtml(r, { targetKg: pl.targetKg, targetDate: pl.targetDate }) : ''}
+    ${pl.apply ? `<p class="faint" style="font-size:12.5px;margin:10px 0 0">Your daily calorie goal follows this plan${h.planSunday ? ', with its own goal on Sundays' : ''}.</p>` : `<p class="faint" style="font-size:12.5px;margin:10px 0 0">Your daily calorie goal is not linked to this plan.</p>`}
+  </section>`;
+}
+const r1 = (x) => Math.round(x * 10) / 10;
+
+function planSheet() {
+  const h = state.health, old = h.plan, t = today();
+  const f = { cur: latestWeight(), target: old?.targetKg ?? '', date: old?.targetDate ?? C.addDays(t, 56), ex: old?.exerciseKcal ?? 0, exd: old?.exerciseDays ?? 7, sun: old?.sundayKcal ?? '', apply: old ? !!old.apply : true };
+  const field = (id, label, val, unit, mode = 'decimal', hint = '') => `<div class="field"><label class="eyebrow" for="${id}">${label}</label><div class="amount-box" style="margin-top:8px"><input id="${id}" class="num" inputmode="${mode}" value="${val ?? ''}" style="font-size:24px"><span class="faint" style="font-size:14px;padding-right:6px">${unit}</span></div>${hint ? `<p class="faint" style="font-size:12.5px;margin:6px 2px 0">${hint}</p>` : ''}</div>`;
+  const body = () => `
+    <p class="lead" style="margin-top:0">Pick where you are, where you want to be and when. The plan is worked out from today and adjusts every time you weigh in.</p>
+    <div class="opts" style="margin-top:6px">${field('pl-cur', 'Weight now', f.cur, 'kg')}${field('pl-target', 'Target weight', f.target, 'kg')}</div>
+    <div class="field"><label class="eyebrow" for="pl-date">Reach it by</label><input class="input num" type="date" id="pl-date" value="${f.date}" min="${C.addDays(t, 1)}">
+      <div class="chips wrap" style="margin-top:10px">${[[4, '4 weeks'], [8, '8 weeks'], [12, '12 weeks'], [26, '6 months']].map(([w, l]) => `<button class="chip" data-wk="${w}">${l}</button>`).join('')}</div></div>
+    <div class="opts">${field('pl-ex', 'Exercise burn', f.ex, 'kcal', 'numeric', 'Calories you burn in a workout, on top of a normal day.')}${field('pl-exd', 'Workout days', f.exd, 'a week', 'numeric', 'Days a week you do it, 1 to 7.')}</div>
+    ${field('pl-sun', 'Sundays I eat about', f.sun, 'kcal', 'numeric', 'Optional. Leave it empty to eat the same every day. The other days adjust so you still land on the date.')}
+    <div class="check ${f.apply ? 'on' : ''}" data-pl-apply style="margin-top:18px"><span class="box">${f.apply ? I.check : ''}</span><div><div class="t">Use it as my daily calorie goal</div><div class="s">Your Today screen and the overeating rule follow it, with its own goal on Sundays.</div></div></div>
+    <div id="pl-res"></div>
+    <div class="btn-row stick">${old ? `<button class="btn danger" data-pl-remove style="flex:0 0 auto;width:auto;padding:0 18px">Remove</button>` : ''}<button class="btn accent" data-pl-save>${old ? 'Save plan' : 'Make my plan'}</button></div>`;
+  const sh = openSheet(old ? 'Weight goal' : 'Plan my weight goal', body());
+  const num = (id) => { const v = ($(id, sh)?.value || '').replace(/,/g, '').trim(); return v === '' ? null : Number(v); };
+  const pull = () => { f.cur = num('#pl-cur'); f.target = num('#pl-target'); f.date = $('#pl-date', sh).value; f.ex = num('#pl-ex') ?? 0; f.exd = num('#pl-exd') ?? 0; f.sun = num('#pl-sun'); };
+  const compute = () => N.weightPlan({ profile: h.profile, currentKg: f.cur, targetKg: f.target, today: t, targetDate: f.date, exerciseKcal: f.ex, exerciseDays: f.exd, sundayKcal: f.sun });
+  const show = () => { pull(); $('#pl-res', sh).innerHTML = planResultHtml(compute(), { targetKg: f.target, targetDate: f.date }); };
+  show();
+  sh.addEventListener('input', show);
+  sh.addEventListener('click', async (ev) => {
+    const wk = ev.target.closest('[data-wk]');
+    if (wk) { $('#pl-date', sh).value = C.addDays(t, Number(wk.dataset.wk) * 7); return show(); }
+    const ap = ev.target.closest('[data-pl-apply]');
+    if (ap) { f.apply = !f.apply; ap.classList.toggle('on', f.apply); $('.box', ap).innerHTML = f.apply ? I.check : ''; return; }
+    if (ev.target.closest('[data-pl-remove]')) {
+      if (await ask('Remove this plan?', 'Your weigh-ins stay. Your calorie goal goes back to the target from Body & goal.', 'Remove', true)) {
+        if (h.plan?.apply) releasePlanGoal(); h.planSunday = null; h.plan = null; if (h.days[t]) delete h.days[t].rules;
+        closeAllSheets(); healthCommit('Weight plan removed');
+      }
+      return;
+    }
+    if (!ev.target.closest('[data-pl-save]')) return;
+    pull();
+    if (!(f.cur >= 25 && f.cur <= 300)) return warn('Enter your weight now, in kg');
+    if (!(f.target >= 25 && f.target <= 300)) return warn('Enter the weight you want, in kg');
+    if (!(f.date > t)) return warn('Pick a date after today');
+    if (!(f.ex >= 0 && f.ex <= 3000)) return warn('Exercise burn should be 0 to 3,000 kcal');
+    if (f.ex > 0 && !(f.exd >= 1 && f.exd <= 7)) return warn('Workout days should be 1 to 7 a week');
+    if (f.sun != null && !(f.sun >= 500 && f.sun <= 6000)) return warn('Sunday calories should be 500 to 6,000, or empty');
+    const r = compute(); if (!r.ok) return warn('Check the numbers');
+    const wasApplied = !!h.plan?.apply;
+    if (Math.abs(f.cur - latestWeight()) > 0.001) { // a new "weight now" is a weigh-in
+      const ex = h.weights.find((x) => x.date === t); if (ex) ex.kg = f.cur; else h.weights.push({ date: t, kg: f.cur });
+      h.profile.weightKg = f.cur;
+    }
+    h.plan = { startKg: f.cur, startDate: t, targetKg: f.target, targetDate: f.date, exerciseKcal: f.ex, exerciseDays: f.exd, sundayKcal: f.sun, apply: f.apply };
+    if (f.apply) syncPlanGoal(); else { h.planSunday = null; if (wasApplied) releasePlanGoal(); }
+    if (h.days[t]) delete h.days[t].rules;
+    closeSheet();
+    healthCommit(r.dir === 'hold' ? 'Plan saved · hold your weight' : `Plan saved · eat about ${nf0.format(r.weekday)} kcal a day`);
+  });
+}
+
 // ---------------------------------------------------------------- body & goal
 function profileSheet(first = false) {
   const h = state.health;
@@ -1590,6 +1717,7 @@ function profileSheet(first = false) {
 
 // ---------------------------------------------------------------- picker
 /** Search and pick a food. mode 'log' adds it to the day; mode 'build' hands it to a meal being made. */
+const FIRST_GROUPS = ['Indian', 'Momos', 'WOW! Momo', 'Indo-Chinese', 'Vegetables', 'Fruits', 'Snacks', 'Fast food', 'Dry fruits & nuts', 'Quick foods', 'Drinks', 'Basics'];
 function pickFood({ day, mode = 'log', onPick } = {}) {
   let q = '', brand = null;
   const lf = loggedFoods();
@@ -1611,7 +1739,7 @@ function pickFood({ day, mode = 'log', onPick } = {}) {
       ${list('Recent', lf.recent)}${list('Most eaten', lf.most)}
       ${list('Your foods', myFoods().slice(-8).reverse())}
       <div class="section-head"><h2>Browse</h2></div>
-      <div class="chips wrap">${['Indian', 'Quick foods', 'Drinks', 'Basics', ...F.BRAND_GROUPS.filter((b) => !['Indian', 'Quick foods', 'Drinks', 'Basics'].includes(b)), ...(myFoods().length ? ['Mine'] : [])].map((b) => `<button class="chip" data-brand="${esc(b)}">${esc(b === 'Mine' ? 'Your foods' : b)}</button>`).join('')}</div>
+      <div class="chips wrap">${[...FIRST_GROUPS, ...F.BRAND_GROUPS.filter((b) => !FIRST_GROUPS.includes(b)), ...(myFoods().length ? ['Mine'] : [])].map((b) => `<button class="chip" data-brand="${esc(b)}">${esc(b === 'Mine' ? 'Your foods' : b)}</button>`).join('')}</div>
       <p class="faint" style="font-size:12px;margin:14px 4px 0">${F.FOODS.length} foods built in. Restaurant and home values are good estimates. Scan or read the label for exact numbers on packets.</p>`;
   };
   const sh = openSheet(mode === 'build' ? 'Add to meal' : `Add food · ${fmtDay(day)}`, `
@@ -1843,7 +1971,7 @@ function recipeSheet(existing) {
 
 function breakdownSheet(d) {
   const meals = state.health.days[d]?.meals || []; const t = N.totals(meals); const tg = TG();
-  const goal = { kcal: state.health.calorieGoal, p: tg?.protein, c: tg?.carbs, f: tg?.fat, fib: tg?.fibre, sug: tg?.sugarMax, na: tg?.sodiumMax };
+  const goal = { kcal: (state.health.days[d]?.rules || H.rulesFor(state.health, d)).calorieGoal, p: tg?.protein, c: tg?.carbs, f: tg?.fat, fib: tg?.fibre, sug: tg?.sugarMax, na: tg?.sodiumMax };
   const missing = meals.filter((m) => m.p == null).length;
   openSheet(`Breakdown · ${fmtDay(d)}`, `
     <div class="card" style="padding:4px 18px">${N.NUTRIENTS.map(([k, l, u]) => { const cap = k === 'sug' || k === 'na'; const over = goal[k] && t[k] > goal[k]; return `<div class="line-item"><div class="grow"><div class="t">${l}</div><div class="track" style="margin-top:8px"><i style="width:${goal[k] ? Math.min(100, (t[k] / goal[k]) * 100) : 0}%;${over && cap ? 'background:var(--neg)' : ''}"></i></div></div><div class="num" style="font-weight:650;text-align:right;min-width:96px">${g1(t[k])} <span class="faint" style="font-weight:500">/ ${goal[k] ?? '—'}${cap ? ' max' : ''} ${u}</span></div></div>`; }).join('')}</div>
@@ -1857,6 +1985,7 @@ document.addEventListener('click', (ev) => {
   const d = el.dataset.d || healthDay();
   switch (el.dataset.act) {
     case 'h-body': profileSheet(); break;
+    case 'h-plan': planSheet(); break;
     case 'h-new-meal': recipeSheet(); break;
     case 'h-edit-meal': recipeSheet(state.health.recipes.find((x) => x.id === el.dataset.id)); break;
     case 'h-log-meal': { const r = state.health.recipes.find((x) => x.id === el.dataset.id); if (r) amountSheet(recipeFood(r), { day: today() }); break; }
@@ -1881,6 +2010,7 @@ document.addEventListener('click', (ev) => {
       const h = state.health; const t = today(); const ex = h.weights.find((x) => x.date === t);
       if (ex) ex.kg = kg; else h.weights.push({ date: t, kg });
       if (h.profile) { h.profile.weightKg = kg; const tg = TG(); if (h.autoGoal !== false && tg) { h.calorieGoal = tg.target; if (h.days[t]) delete h.days[t].rules; } }
+      if (syncPlanGoal() && h.days[t]) delete h.days[t].rules;
       healthCommit(`${kg} kg logged${h.profile ? ` · target ${kcal(h.calorieGoal)}` : ''}`);
       break;
     }
@@ -2060,6 +2190,7 @@ matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => {
 function catchUp() {
   postRecurring();
   settleHealth();
+  if (syncPlanGoal()) { S.save(state); if (!sheetStack.length) render(); } // a new day, a new share of the plan
   if (ui.day !== today() && !sheetStack.length) { ui.hday = null; render(); }
 }
 function postRecurring({ boot = false } = {}) {
@@ -2125,6 +2256,7 @@ postRecurring({ boot: true });
 lastBalance = C.balances(state).total;
 importStepsFromLink();
 settleHealth({ quietRender: true });
+if (syncPlanGoal()) S.save(state);
 render();
 checkPendingPay();
 scheduleMidnight();

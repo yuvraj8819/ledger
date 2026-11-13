@@ -300,6 +300,92 @@ test('next bill date respects when the bill starts', () => {
   eq(C.nextBillDate({ day: 31, lastPosted: '2027-01' }, '2027-02-01'), '2027-02-28');
 });
 
+// ---- weight goal planner (2026-11-14 is a Saturday, so 2026-11-15 is the first Sunday)
+const P = { sex: 'male', age: 25, heightCm: 175, bodyFat: null };
+const plan = (o) => N.weightPlan({ profile: P, currentKg: 80, targetKg: 77, today: '2026-11-14', targetDate: '2026-12-14', exerciseKcal: 0, exerciseDays: 7, ...o });
+test('planner: burn is resting × 1.2 plus the average exercise', () => {
+  const a = plan({}), b = plan({ exerciseKcal: 900, exerciseDays: 7 }), c = plan({ exerciseKcal: 900, exerciseDays: 3 });
+  eq(a.burn, a.base); eq(b.burn, a.base + 900); eq(c.exAvg, Math.round(900 * 3 / 7));
+});
+test('planner: 3 kg in 30 days means a deficit of 3 × 7700 / 30 a day', () => {
+  const r = plan({ exerciseKcal: 900 });
+  eq(r.ok, true); eq(r.dir, 'lose'); eq(r.days, 30); eq(r.asked.deficit, 770); eq(r.tooFast, false);
+  eq(Math.abs(r.weekday - (r.burn - 770)) <= 5, true); eq(r.sunday, r.weekday);
+});
+test('planner: with no exercise, 3 kg in 30 days is too fast, because it would mean eating under the resting burn', () => {
+  const r = plan({}); eq(r.tooFast, true); eq(r.reason, 'floor'); eq(r.weekday, Math.round(r.bmr / 5) * 5);
+});
+test('planner: exercise raises what you can eat, one for one', () => {
+  const easy = { targetKg: 79.5 };
+  eq(plan({ ...easy, exerciseKcal: 900 }).weekday - plan({ ...easy }).weekday >= 895, true);
+});
+test('planner: a date that is too soon is held at the safe pace and shows the real date', () => {
+  const r = plan({ targetKg: 70, targetDate: '2026-11-28' });
+  eq(r.tooFast, true); eq(r.safe.date > '2026-11-28', true); eq(r.weekday >= r.bmr, true); eq(r.paceKgWeek <= 0.8 + 0.001, true); eq(r.endDate, r.safe.date);
+});
+test('planner: never plans below the resting burn, even with no exercise and a hard date', () => {
+  const r = plan({ currentKg: 60, targetKg: 55, targetDate: '2026-11-21' });
+  eq(r.tooFast, true); eq(r.weekday >= r.bmr, true);
+});
+test('planner: Sundays can be bigger, and the other days make it up', () => {
+  const same = plan({ exerciseKcal: 900 });
+  const sun = plan({ exerciseKcal: 900, sundayKcal: same.weekday + 800 });
+  eq(sun.sunday, same.weekday + 800); eq(sun.weekday < same.weekday, true);
+  // the whole period still adds up to the same budget (within the 5 kcal rounding)
+  const total = (r) => r.weekday * (r.horizon - r.sundays) + r.sunday * r.sundays;
+  eq(Math.abs(total(sun) - same.weekday * same.horizon) <= 5 * same.horizon, true); eq(sun.sundays, 5);
+});
+test('planner: a huge Sunday is capped so other days stay above the resting burn', () => {
+  const r = plan({ sundayKcal: 9000 });
+  eq(r.sundayAdjusted, true); eq(r.weekday, Math.round(r.bmr / 5) * 5); eq(r.sunday < 9000, true);
+});
+test('planner: gaining, holding and bad dates', () => {
+  const g = plan({ currentKg: 60, targetKg: 63 }); eq(g.dir, 'gain'); eq(g.weekday > g.burn, true);
+  eq(plan({ currentKg: 60, targetKg: 60 }).dir, 'hold');
+  eq(plan({ targetDate: '2026-11-14' }).ok, false); eq(plan({ targetDate: '2026-11-01' }).why, 'date');
+  eq(N.weightPlan({ profile: P, currentKg: 0, targetKg: 70, today: '2026-11-14', targetDate: '2026-12-14' }).ok, false);
+});
+test('planner: under 18 the pace is held lower', () => {
+  const r = N.weightPlan({ profile: { ...P, age: 16 }, currentKg: 80, targetKg: 70, today: '2026-11-14', targetDate: '2026-12-14' });
+  eq(r.tooFast, true); eq(r.paceKgWeek <= 0.4 + 0.001, true); eq(r.notes.some((n) => /doctor/i.test(n.t)), true);
+});
+test('planner progress: on the line, ahead and behind', () => {
+  const pl = { startKg: 80, startDate: '2026-11-14', targetKg: 74, targetDate: '2026-12-14' };
+  const at = (kg) => N.planProgress(pl, [{ date: '2026-11-29', kg }], '2026-11-29'); // half way: line says 77
+  eq(at(77).status, 'on'); eq(at(76).status, 'ahead'); eq(at(78.5).status, 'behind'); eq(at(77).expected, 77); eq(at(77).moved, 3);
+});
+test('rules: Sundays can have their own calorie goal while a plan drives it', () => {
+  const h = { stepGoal: 10000, calorieGoal: 1700, overMargin: 500, reward: 1, penalty: 2, plan: { apply: true }, planSunday: 2300 };
+  eq(H.rulesFor(h, '2026-11-15').calorieGoal, 2300); eq(H.rulesFor(h, '2026-11-16').calorieGoal, 1700);
+  eq(H.rulesFor({ ...h, plan: { apply: false } }, '2026-11-15').calorieGoal, 1700); eq(H.rulesFor({ ...h, planSunday: null }, '2026-11-15').calorieGoal, 1700);
+});
+
+// ---- the food list
+test('foods: every id is unique and every row is sensible', () => {
+  const ids = new Set();
+  for (const f of F.FOODS) {
+    if (ids.has(f.id)) throw new Error('duplicate id ' + f.id); ids.add(f.id);
+    const n = f.n; if (!(n.kcal >= 0) || !(f.serving.g > 0)) throw new Error('bad row ' + f.name);
+    const kc = 4 * n.p + 4 * n.c + 9 * n.f;
+    if (kc >= 60 && Math.abs(kc - n.kcal) / kc > 0.35 && !/beer|cola|coke|sprite|thums|maaza|frooti|juice|sting|bull|monster|wine|whisky/i.test(f.name)) throw new Error(`${f.name}: ${n.kcal} kcal but macros say ${Math.round(kc)}`);
+  }
+  eq(F.FOODS.length >= 1000, true);
+});
+test('foods: the things you asked for can be found', () => {
+  const find = (q) => F.searchFoods(q, [], { limit: 80 }).map((f) => `${f.brand} ${f.name}`.toLowerCase());
+  const has = (q, part) => { if (!find(q).some((n) => n.includes(part))) throw new Error(`"${q}" should find "${part}"`); };
+  has('kurkure momo', 'kurkure momo'); has('steamed momos', 'steamed'); has('afghani momo', 'afghani'); has('wow momo', 'wow');
+  has('besan chilla', 'besan chilla'); has('kadhi', 'without pakoda'); has('kadhi', 'with pakoda'); has('rajma', 'rajma'); has('chole', 'chole');
+  has('manchurian', 'manchurian'); has('chowmein', 'chowmein'); has('hakka', 'hakka'); has('thukpa', 'thukpa'); has('roti', 'roti');
+  has('bhindi', 'bhindi'); has('broccoli', 'broccoli'); has('papaya', 'papaya'); has('pomegranate', 'pomegranate'); has('pani puri', 'pani puri'); has('chaat', 'chaat');
+});
+test('foods: groups are browsable', () => {
+  for (const g of ['Momos', 'WOW! Momo', 'Indo-Chinese', 'Vegetables', 'Fruits', 'Snacks', 'Fast food', 'Dry fruits & nuts']) {
+    if (!F.BRAND_GROUPS.includes(g)) throw new Error('missing group ' + g);
+    if (F.searchFoods('', [], { brandGroup: g }).length < 8) throw new Error(g + ' is nearly empty');
+  }
+});
+
 const failed = results.filter((r) => !r[1]);
 document.getElementById('sum').innerHTML = failed.length ? `<span class="bad">${failed.length} of ${results.length} failed</span>` : `<span class="ok">All ${results.length} tests passed</span>`;
 document.getElementById('out').innerHTML = results.map(([n, ok, m]) => `<div class="${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'} ${n}${m ? ' — ' + m : ''}</div>`).join('');
