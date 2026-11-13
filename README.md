@@ -87,7 +87,7 @@ The design idea is a **passbook**. The balance sits on a ruled page with a red m
 
 - **Glass and depth:** only things that float (tab bar, + button, sheets, toasts, the lock) blur what's behind them and cast a shadow. Everything in the scrolling page is flat glass, which also keeps scrolling smooth on iPhone.
 - **Theme:** Settings → Theme has Dark, Light and Auto (follows the phone).
-- **Sound:** short taps, coins for money in and out, a low note for delete, a buzz for mistakes and a run of notes on unlock, generated in `js/sfx.js`. Turn it off in Settings → Sounds and haptics.
+- **Sound:** short taps, coins for money in and out, a low note for delete, a buzz for mistakes and a run of notes on unlock, generated in `js/sfx.js`. Turn it off in Settings → Sounds and haptics. Sounds mix with Spotify and other music instead of pausing it, and follow the ring/silent switch. "Play on silent" (iPhone, off by default) makes them play with the switch off, but iOS then pauses other apps' audio.
 
 The interface follows a checklist of UX and animation principles. Where each one shows up:
 

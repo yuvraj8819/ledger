@@ -5,19 +5,30 @@
 //  • Audio may only start from a tap. unlock() runs on the first touch and wakes the audio engine.
 //  • After the app has been in the background the engine is left "interrupted", not "suspended";
 //    it has to be resumed again on the next tap, or rebuilt if it won't wake.
-//  • The ring/silent switch mutes web sounds unless the page asks for the "playback" audio
-//    session (iOS 16.4+). That's the "Play on silent" setting; it can pause music from other apps.
+//  • Other apps' music: the "ambient" audio session mixes with Spotify and respects the ring/silent switch,
+//    so app sounds play over music without pausing it. That is the default.
+//  • The "playback" session is the only way to be heard with the ring switch off, but iOS makes it exclusive:
+//    it pauses Spotify and other players. So it is opt-in ("Play on silent"), off by default.
+//  • The audio engine is put to sleep a few seconds after the last sound, so the app isn't holding the session.
 
 let ctx = null;
 let master = null;
 let enabled = true;
-let playOnSilent = true;
+let playOnSilent = false;
 export const log = []; // names of the last sounds played (handy when testing)
 
 export function setEnabled(v) { enabled = !!v; }
 export function setPlayOnSilent(v) {
   playOnSilent = !!v;
-  try { if (navigator.audioSession) navigator.audioSession.type = playOnSilent && enabled ? 'playback' : 'auto'; } catch { /* not supported */ }
+  // 'ambient' mixes with other apps' audio; 'playback' interrupts it
+  try { if (navigator.audioSession) navigator.audioSession.type = playOnSilent && enabled ? 'playback' : 'ambient'; } catch { /* not supported */ }
+}
+
+// let the engine sleep when nothing has played for a while
+let idleTimer = null;
+function touchIdle() {
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => { try { if (ctx && ctx.state === 'running') ctx.suspend().catch(() => {}); } catch { /* ignore */ } }, 5000);
 }
 
 function build() {
@@ -32,6 +43,7 @@ function build() {
 function audio() {
   if (!ctx || ctx.state === 'closed') { if (!build()) return null; }
   if (ctx.state !== 'running') ctx.resume().catch(() => {});
+  touchIdle();
   return ctx;
 }
 

@@ -255,7 +255,7 @@ function render() {
   document.body.dataset.app = appOf(ui.tab) || 'apps'; // each app wears its own colour
   ui.day = today();
   X.setEnabled(s.sound !== false);
-  X.setPlayOnSilent(s.soundSilent !== false);
+  X.setPlayOnSilent(s.soundSilent === true); // off unless chosen: it pauses Spotify
   document.body.classList.toggle('privacy', !!s.hideAmounts);
   $('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#edf1f2' : '#000000');
   const app = $('#app');
@@ -502,7 +502,7 @@ function settingsView() {
       <div class="row static"><div class="ic">${I.theme}</div><div class="mid"><div class="t">Theme</div></div>
         <div class="seg mini" role="group" aria-label="Theme">${[['dark', 'Dark'], ['light', 'Light'], ['auto', 'Auto']].map(([v, l]) => `<button class="${cur === v ? 'on' : ''}" data-act="set-theme" data-v="${v}">${l}</button>`).join('')}</div></div>
       ${toggle('toggle-sound', 'sound', 'Sounds and haptics', 'Taps and chimes as you use the app', sound)}
-      ${sound && IOS ? toggle('toggle-silent', 'sound', 'Play on silent', 'Hear sounds with the ring switch off. May pause music from other apps.', s.soundSilent !== false) : ''}
+      ${sound && IOS ? toggle('toggle-silent', 'sound', 'Play on silent', 'Hear sounds even with the ring switch off. Turning this on pauses Spotify and other music apps.', s.soundSilent === true) : ''}
       ${sound ? `<button class="row wrap" data-act="test-sound"><div class="ic">${I.rupee}</div><div class="mid"><div class="t">Test the sounds</div><div class="s">Plays money in, then money out</div></div><span class="chev">${I.chev}</span></button>` : ''}
     </div>
     <div class="section-head"><h2>Privacy and data</h2></div>
@@ -2111,7 +2111,7 @@ document.addEventListener('click', async (ev) => {
       break;
     }
     case 'dismiss-install': try { localStorage.setItem(hintKey, '1'); } catch { /* ignore */ } render(); break;
-    case 'toggle-silent': state.settings.soundSilent = state.settings.soundSilent === false; S.save(state); render(); X.play('success'); break;
+    case 'toggle-silent': state.settings.soundSilent = state.settings.soundSilent !== true; S.save(state); render(); X.play('success'); break;
     case 'test-sound': X.play('coinIn'); setTimeout(() => X.play('coinOut'), 900); break;
     case 'toggle-sound': state.settings.sound = state.settings.sound === false; S.save(state); render(); X.play('success'); break;
     case 'close-sheet': if (!el.closest('.sheet-body') || el.classList.contains('btn')) closeSheet(); break;
