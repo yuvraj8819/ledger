@@ -1887,7 +1887,7 @@ async function runOCR(file) {
   try {
     const text = await SC.readLabel(file, (p) => { const b = $('#ocr-bar', sh); if (b) { b.style.width = `${Math.max(4, p * 100)}%`; $('#ocr-msg', sh).textContent = 'Reading the numbers…'; } });
     if (sheetStack.at(-1)?.sh === sh) closeSheet();
-    const res = N.parseLabel(text);
+    const res = N.parseLabel(text); res.raw = text;
     if (!res.found) { warn('Couldn’t read the numbers. Fill the frame with just the nutrition table, in good light, held flat and steady.'); return null; }
     return res;
   } catch (e) { if (sheetStack.at(-1)?.sh === sh) closeSheet(); warn(e.message || 'Couldn’t read the label'); return null; }
@@ -1897,7 +1897,7 @@ async function labelFlow(day, { mode = 'log', onPick } = {}) {
   const file = await SC.pickPhoto(); if (!file) return;
   const res = await runOCR(file); if (!res) return;
   createFoodSheet({ n: res.n, per: res.per100 || !res.servingG ? '100' : 'serving', servingG: res.servingG, source: 'label', fromLabel: true }, {
-    note: `Read ${res.found} of 7 values from the photo. ${res.repaired?.length ? `I corrected ${res.repaired.length === 1 ? 'one number' : 'some numbers'} that looked ten times too big (a missed decimal point). ` : ''}${res.check?.ok === false ? '<b>These numbers don’t add up, so something was misread.</b> ' : ''}Check each one against the label, fix any misreads, and name it.`,
+    note: `Read ${res.found} of 7 values from the photo. ${res.repaired?.length ? `I corrected ${res.repaired.length === 1 ? 'one number' : 'some numbers'} that looked ten times too big (a missed decimal point). ` : ''}${res.check?.ok === false ? '<b>These numbers don’t add up, so something was misread.</b> ' : ''}Check each one against the label, fix any misreads, and name it.<details class="seen"><summary>See what the reader saw</summary><pre>${esc((res.raw || '').trim() || '(nothing)')}</pre></details>`,
     onSaved: (food) => amountSheet(food, { day, mode, onPick }),
   });
 }

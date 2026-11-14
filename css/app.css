@@ -651,3 +651,7 @@ textarea.input { min-height: 88px; resize: vertical; font: 14px/1.4 ui-monospace
 .dm::after { content: ""; position: absolute; inset: 2.5px; border-radius: 50%; background: currentColor; }
 .dm-veg { color: #1fa463; } .dm-egg { color: #e5a00d; } .dm-nonveg { color: #d9382d; }
 .row .t .dm { margin-right: 7px; }
+
+.seen { margin-top: 10px; font-size: 12.5px; color: var(--ink-3); }
+.seen summary { cursor: pointer; }
+.seen pre { white-space: pre-wrap; word-break: break-word; font: 12px/1.45 ui-monospace, Menlo, monospace; background: var(--g-bg-2); border-radius: 10px; padding: 10px; margin: 8px 0 0; max-height: 180px; overflow: auto; color: var(--ink-2); }

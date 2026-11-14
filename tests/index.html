@@ -510,6 +510,30 @@ test('WOW! Momo schezwan, burger buns and momo chutney are found, including comm
   eq(F.FOODS.filter((f) => f.brandGroup === 'WOW! Momo' && f.diet === 'nonveg').every((f) => /chicken/i.test(f.name)), true);
 });
 
+// ---------- label layouts seen on real packs (2.2.2) ----------
+test('label layouts: paragraph, "Fats", US style, several per line, names block then numbers block, typos', () => {
+  const want = { kcal: 512, p: 7.2, c: 58.4, f: 27.6, fib: 2.5, na: 650 };
+  const same = (text, keys = Object.keys(want)) => { const r = N.parseLabel(text); for (const k of keys) if (r.n[k] !== want[k]) throw new Error(`${k} was ${r.n[k]}, wanted ${want[k]}`); return r; };
+  same('Nutritional Information (Approx. values) per 100 g: Energy 512 kcal, Protein 7.2 g, Carbohydrate 58.4 g (of which Sugars 4.1 g), Total Fat 27.6 g, Dietary Fibre 2.5 g, Sodium 650 mg');
+  same('Per 100 g\nEnergy (kcal) 512\nProteins (g) 7.2\nCarbohydrates (g) 58.4\nFats (g) 27.6\nFibre (g) 2.5\nSodium (mg) 650');
+  same('Protein 7.2 g Carbohydrate 58.4 g Total Fat 27.6 g\nDietary Fibre 2.5 g Sodium 650 mg Energy 512 kcal');
+  same('Nutrient\nPer 100 g\nEnergy\nProtein\nCarbohydrate\nTotal Fat\nDietary Fibre\nSodium\n512 kcal\n7.2 g\n58.4 g\n27.6 g\n2.5 g\n650 mg');
+  same('Nutrient\nPer 100 g Per serve\nEnergy\nProtein\nCarbohydrate\nTotal Fat\nSodium\n512\n7.2\n58.4\n27.6\n650\n154\n2.2\n17.5\n8.3\n195', ['kcal', 'p', 'c', 'f', 'na']);
+  same('Per 100 g\nEnergy 512 kcal\nProlein 7.2 g\nCarbonydrate 58.4 g\nTotal Fat 27.6 g\nDietary Fiber 2.5 g\nSodlum 650 mg');
+  const us = N.parseLabel('Nutrition Facts\nCalories 230\nTotal Fat 8g 10%\nSaturated Fat 1g 5%\nTrans Fat 0g\nCholesterol 0mg 0%\nSodium 160mg 7%\nTotal Carbohydrate 37g 13%\nDietary Fiber 4g 14%\nTotal Sugars 12g\nIncludes 10g Added Sugars 20%\nProtein 3g 6%');
+  eq(us.n, { kcal: 230, p: 3, c: 37, f: 8, fib: 4, sug: 12, na: 160 });
+  eq(N.parseLabel('Per 100 g\nEnergy 512 kcal\nProtein 7.2 g\nCarbohydrate 58.4 g\nFat 27.6 g\nSalt 1.6 g').n.na, 640);
+});
+test('label: saturated and trans fat never stand in for total fat', () => {
+  eq(N.parseLabel('Saturated Fat 12.0 g\nTrans Fat 0 g\nTotal Fat 27.6 g').n.f, 27.6);
+  eq(N.parseLabel('Total Fat 27.6 g\nSaturated Fat 12.0 g').n.f, 27.6);
+});
+
+test('label: a dropped decimal is repaired even when another value is missing', () => {
+  const r = N.parseLabel('Per 100 g\nEnergy 512 kcal\nCarbohydrate 58.4 g\nTotal Fat 276 g\nDietary Fibre 2.5 g');
+  eq(r.n.f, 27.6); eq(r.repaired.includes('f'), true);
+});
+
 const failed = results.filter((r) => !r[1]);
 document.getElementById('sum').innerHTML = failed.length ? `<span class="bad">${failed.length} of ${results.length} failed</span>` : `<span class="ok">All ${results.length} tests passed</span>`;
 document.getElementById('out').innerHTML = results.map(([n, ok, m]) => `<div class="${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'} ${n}${m ? ' — ' + m : ''}</div>`).join('');

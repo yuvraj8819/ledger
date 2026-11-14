@@ -283,42 +283,73 @@ export function parseLabel(text) {
     if (i100 >= 0 && iServ >= 0) { serveFirst = iServ < i100; break; }
   }
   const pick = (list) => (list.length ? (serveFirst && list.length > 1 ? list[list.length - 1] : list[0]) : null);
-  const hasName = (l) => /energy|calor|protein|carbo|fat\b|fib(re|er)|sugar|sodium|salt/i.test(l);
-  const rawAt = (i, re) => {
-    const l = lines[i]; const at = l.search(re);
-    let v = pick(raws(l.slice(at).replace(re, ' ')));
-    if (v == null && lines[i + 1] && !hasName(lines[i + 1])) v = pick(raws(lines[i + 1])); // number wrapped onto the next line
-    return v;
-  };
-  const valueAt = (i, re) => { const t = rawAt(i, re); return t == null ? null : Number(t); };
   const rawTok = {}; // the text each value was read from
-  const rules = [
-    ['p', /protein/i], ['fib', /(dietary\s*)?fib(re|er)/i], ['sug', /(total\s*)?sugars?/i],
-    ['c', /carbo\s*hydrates?|carbs?\b/i], ['f', /(total\s*)?fat\b/i], ['na', /sodium/i],
+
+  // Nutrient names, tolerant of the usual OCR slips (Prolein, Carbonydrate) and of wording ("Fats", "Fiber", "Proteins").
+  // Markers stand in for names we need as boundaries but don't keep (saturated, trans, added sugars, cholesterol, vitamins…).
+  const prep = (l) => l
+    .replace(/added\s*sugars?/gi, '§ADDSUG§')
+    .replace(/(?:\bsaturated|\bsat\b\.?|\btrans|mono\s*unsaturated|poly\s*unsaturated|\bunsaturated)\s*(?:fatty\s*acids?|fats?)?/gi, '§SATFAT§')
+    .replace(/cholesterol|calcium|\biron\b|potassium|vitamin\s*\w*|\bmg\b\s*\/\s*serv/gi, '§OTHER§');
+  const NAMES = [
+    ['kcal', '\\bener[a-z]{1,4}\\b|calor(?:ie)?s?'], ['p', '\\bpro[a-z]{2,5}n\\w*|\\bprot\\b'], ['c', 'carb\\w*|\\bcho\\b'], ['sug', 'sugars?'],
+    ['fib', '\\bfib(?:re|er|r)\\w*|roughage'], ['f', '\\bfats?\\b|\\blipids?\\b'], ['na', 'sod[il1]um'], ['salt', '\\bsalt\\b'],
+    ['addsug', '§ADDSUG§'], ['skip', '§SATFAT§|§OTHER§'],
   ];
+  const find = (line) => {
+    const hits = [];
+    for (const [key, src] of NAMES) for (const m of line.matchAll(new RegExp(src, 'gi'))) hits.push({ key, at: m.index, end: m.index + m[0].length });
+    return hits.sort((x, y) => x.at - y.at).filter((h, i, all) => i === 0 || h.at >= all[i - 1].end); // drop overlaps
+  };
+  const energy = (str) => {
+    const all = (re) => [...str.matchAll(new RegExp(re, 'gi'))].map((m) => Number(m[1]));
+    const kcs = all('(\\d+(?:\\.\\d+)?)\\s*k\\s*ca[l1i]'), kjs = all('(\\d+(?:\\.\\d+)?)\\s*k\\s*j');
+    if (kcs.length) return pick(kcs);
+    if (kjs.length) return pick(kjs) / 4.184;
+    const r = raws(str); return r.length ? Number(pick(r)) : null;
+  };
   let added = null, salt = null;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (n.kcal == null && /energy|calor/i.test(line)) {
-      const all = (re) => [...line.matchAll(new RegExp(re, 'gi'))].map((m) => Number(m[1]));
-      const kcs = all('(\\d+(?:\\.\\d+)?)\\s*k\\s*ca[l1i]'), kjs = all('(\\d+(?:\\.\\d+)?)\\s*k\\s*j');
-      let v = kcs.length ? pick(kcs) : kjs.length ? pick(kjs) / 4.184 : valueAt(i, /energy|calor\w*/i);
-      if (v != null) n.kcal = Math.round(v);
-      continue;
-    }
-    if (/salt/i.test(line) && !/sodium/i.test(line) && salt == null) salt = valueAt(i, /salt/i);
-    for (const [k, re] of rules) {
-      if (!re.test(line)) continue;
-      if (k === 'f' && /saturated|trans|mono|poly|\bsat\b/i.test(line)) continue;
-      if (k === 'sug' && /added/i.test(line)) { if (added == null) added = valueAt(i, re); continue; } // prefer the total sugars line
-      if (n[k] != null) continue;
-      const tok = rawAt(i, re);
-      let v = tok == null ? null : Number(tok);
-      if (v == null) continue;
-      rawTok[k] = tok;
-      if (k === 'na' && /\bg\b/.test(line.slice(line.search(re))) && !/mg/i.test(line) && v < 10) v *= 1000;
-      n[k] = k === 'na' ? Math.round(v) : r1(v);
-      break;
+  const setValue = (key, tok, seg) => {
+    if (tok == null && key !== 'kcal') return;
+    if (key === 'kcal') { const v = energy(seg); if (n.kcal == null && v != null) n.kcal = Math.round(v); return; }
+    let v = Number(tok);
+    if (key === 'addsug') { if (added == null) added = v; return; }
+    if (key === 'salt') { if (salt == null) salt = v; return; }
+    if (n[key] != null) return;
+    if (key === 'na' && /\bg\b/.test(seg) && !/mg/i.test(seg) && v < 10) v *= 1000;
+    rawTok[key] = tok;
+    n[key] = key === 'na' ? Math.round(v) : r1(v);
+  };
+  const isHead = (l) => /\bper\b|serv|100\s*(g|ml)|nutri|information|approx/i.test(l); // table headings, never values
+  const info = lines.map((l) => { const t = prep(l); return { t, hits: find(t), nums: raws(t) }; });
+  for (let i = 0; i < info.length; i++) {
+    const { t, hits } = info[i];
+    hits.forEach((h, j) => {
+      if (h.key === 'skip') return;
+      const seg = t.slice(h.end, j + 1 < hits.length ? hits[j + 1].at : t.length); // everything up to the next nutrient name on the line
+      let tok = pick(raws(seg));
+      // a number wrapped onto the next line (but not when this name is one of a block of names, whose numbers come later)
+      const inBlock = i > 0 && info[i - 1].hits.length > 0 && info[i - 1].nums.length === 0;
+      if (tok == null && j === hits.length - 1 && !inBlock && info[i + 1] && !info[i + 1].hits.length && !isHead(lines[i + 1])) tok = pick(info[i + 1].nums);
+      setValue(h.key, tok, seg + (tok == null || !info[i + 1] ? '' : ' ' + (info[i + 1].hits.length ? '' : lines[i + 1])));
+    });
+  }
+  // Names in one block and numbers in another (common on boxed tables): pair them up in order.
+  const missing = ['kcal', 'p', 'c', 'f', 'fib', 'sug', 'na'].filter((k) => n[k] == null).length;
+  if (missing >= 3) {
+    const nameOnly = (r) => r.hits.length > 0 && r.nums.length === 0;
+    const numOnly = (r, l) => r.hits.length === 0 && r.nums.length > 0 && !isHead(l);
+    for (let i = 0; i < info.length; i++) {
+      if (!nameOnly(info[i])) continue;
+      let e = i; while (e < info.length && nameOnly(info[e])) e++;
+      if (e - i < 3) { i = e - 1; continue; }
+      let v = e; while (v < info.length && (isHead(lines[v]) || nameOnly(info[v]))) v++; // skip a header between the blocks
+      let w = v; while (w < info.length && numOnly(info[w], lines[w])) w++;
+      if (w - v >= e - i && (w - v) % (e - i) === 0) { // one number per name; a second block is the per-serve column
+        for (let k = 0; k < e - i; k++) { const key = info[i + k].hits[0].key; if (key !== 'skip') setValue(key, pick(info[v + k].nums), lines[v + k]); }
+        break;
+      }
+      i = e - 1;
     }
   }
   if (n.sug == null && added != null) n.sug = r1(added);
@@ -374,7 +405,8 @@ function repairDecimals(n) {
   for (let mask = 1; mask < 1 << keys.length; mask++) {
     const t = { ...n }; const changed = [];
     keys.forEach((k, i) => { if (mask & (1 << i)) { t[k] = r1(n[k] / 10); changed.push(k); } });
-    if (checkLabel(t).ok === true && (!best || changed.length < best.changed.length)) best = { t, changed };
+    // fixes the problem even when a value is missing and the energy sum can't be checked
+    if (checkLabel(t).ok !== false && (!best || changed.length < best.changed.length)) best = { t, changed };
   }
   if (!best) return [];
   Object.assign(n, best.t);
