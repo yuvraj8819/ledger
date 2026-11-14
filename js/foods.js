@@ -399,7 +399,7 @@ const DATA = {
 };
 
 // brand groups that are kinds of food, not companies: no brand name shown beside the food
-const GENERIC = ['Korean ramen', 'Indian', 'Basics', 'Quick foods', 'Drinks', 'Momos', 'Indo-Chinese', 'Vegetables', 'Fruits', 'Dry fruits & nuts', 'Snacks', 'Fast food'];
+const GENERIC = ['Ramen & noodles', 'Korean ramen', 'Indian', 'Basics', 'Quick foods', 'Drinks', 'Momos', 'Indo-Chinese', 'Vegetables', 'Fruits', 'Dry fruits & nuts', 'Snacks', 'Fast food'];
 const slug = (s) => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 // ---------- veg / egg / non-veg ----------
 export const DIETS = [['veg', 'Veg'], ['egg', 'Egg'], ['nonveg', 'Non-veg']];

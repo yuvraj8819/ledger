@@ -551,6 +551,14 @@ test('Buldak and Shin ramens, carbonara sauce, and snacks are found, with sensib
   eq(names('lays').length >= 5, true); eq(names('makhana').length >= 3, true); eq(names('chikki').length >= 3, true); eq(names('pringles').length >= 2, true);
 });
 
+test('ramen: Korean brands, Indomie, Maggi cups, Yippee, Nissin, Maruchan and restaurant bowls are found with sensible diets', () => {
+  const n = (q) => F.searchFoods(q, [], { limit: 500 });
+  eq(n('ramen').length >= 60, true); eq(n('buldak').length >= 20, true); eq(n('neoguri').length >= 2, true); eq(n('jin ramen').length >= 3, true);
+  eq(n('indomie').length >= 5, true); eq(n('yippee').length >= 5, true); eq(n('maruchan').length >= 5, true); eq(n('tonkotsu').length >= 2, true);
+  eq(F.FOODS.find((x) => /Soon Veggie/.test(x.name)).diet, 'veg'); eq(F.FOODS.find((x) => /Neoguri \(Spicy Seafood/.test(x.name)).diet, 'nonveg');
+  eq(F.FOODS.find((x) => /Ajitsuke Tamago/.test(x.name)).diet, 'egg'); eq(F.FOODS.find((x) => /Yippee Magic Masala/.test(x.name)).diet, 'veg');
+});
+
 const failed = results.filter((r) => !r[1]);
 document.getElementById('sum').innerHTML = failed.length ? `<span class="bad">${failed.length} of ${results.length} failed</span>` : `<span class="ok">All ${results.length} tests passed</span>`;
 document.getElementById('out').innerHTML = results.map(([n, ok, m]) => `<div class="${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'} ${n}${m ? ' — ' + m : ''}</div>`).join('');
