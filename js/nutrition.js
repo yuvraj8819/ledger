@@ -257,40 +257,126 @@ export function offToFood(code, product) {
 
 // ---------------------------------------------------------------- nutrition labels (OCR text)
 /**
- * Reads nutrients out of OCR'd label text. Takes the first number after each nutrient's name,
- * which on Indian and most other labels is the "per 100 g" column. Returns { n, per100, found }.
- * Always shown to you to check before saving: OCR misreads happen.
+ * Reads nutrients out of OCR'd label text. Always shown to you to check before saving: OCR misreads happen.
+ * Copes with the usual ways phone photos go wrong:
+ *  • "per 100 g | per serve" tables in either order, with or without a %RDA column (it returns the per-100 g value)
+ *  • a nutrient name on one line and its number on the next
+ *  • letters read for digits (2O.5, 1l.2), comma decimals, kJ and kcal on one line, salt instead of sodium
+ * Returns { n, per100, servingG, found, columns } where found is how many of the 7 values were read.
  */
 export function parseLabel(text) {
-  const lines = String(text || '').replace(/[|]/g, ' ').replace(/(\d),(\d)/g, '$1.$2').split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const fixDigits = (l) => l
+    .replace(/\(\s*(?:g|9|q|mg|mcg|µg|kcal|kj|ml|%)\s*\)?/gi, ' ') // unit brackets; "(g)" is often read as "(9)"
+    .replace(/\b0(\d)\b(?!\.)/g, '0.$1') // "08" can only be 0.8
+    .replace(/\b[Oo](?=[.,]\d)/g, '0')
+    .replace(/(\d)[Oo](?=[\d.,]|\b)/g, '$10')
+    .replace(/(\d)[lI|](?=[\d.,])/g, (m, d) => d + '1')
+    .replace(/(\d),(\d)/g, '$1.$2');
+  const lines = String(text || '').split(/\n+/).map((l) => fixDigits(l.replace(/[|]/g, ' ')).trim()).filter(Boolean);
   const n = { kcal: null, p: null, c: null, f: null, fib: null, sug: null, na: null };
-  const first = (s) => { const m = s.match(/(\d+(?:\.\d+)?)/); return m ? Number(m[1]) : null; };
-  const after = (line, re) => { const i = line.search(re); return i < 0 ? null : first(line.slice(i).replace(re, ' ')); };
+  // numbers on a line, leaving out the %RDA column
+  const raws = (s) => [...s.replace(/\d+(?:\.\d+)?\s*%/g, ' ').matchAll(/\d+(?:\.\d+)?/g)].map((m) => m[0]);
+  // which column is per 100 g? Look for a header with both "100 g" and "serve/serving" on one line.
+  let serveFirst = false;
+  for (const l of lines) {
+    const i100 = l.search(/100\s*(g|ml)/i), iServ = l.search(/serv/i);
+    if (i100 >= 0 && iServ >= 0) { serveFirst = iServ < i100; break; }
+  }
+  const pick = (list) => (list.length ? (serveFirst && list.length > 1 ? list[list.length - 1] : list[0]) : null);
+  const hasName = (l) => /energy|calor|protein|carbo|fat\b|fib(re|er)|sugar|sodium|salt/i.test(l);
+  const rawAt = (i, re) => {
+    const l = lines[i]; const at = l.search(re);
+    let v = pick(raws(l.slice(at).replace(re, ' ')));
+    if (v == null && lines[i + 1] && !hasName(lines[i + 1])) v = pick(raws(lines[i + 1])); // number wrapped onto the next line
+    return v;
+  };
+  const valueAt = (i, re) => { const t = rawAt(i, re); return t == null ? null : Number(t); };
+  const rawTok = {}; // the text each value was read from
   const rules = [
     ['p', /protein/i], ['fib', /(dietary\s*)?fib(re|er)/i], ['sug', /(total\s*)?sugars?/i],
     ['c', /carbo\s*hydrates?|carbs?\b/i], ['f', /(total\s*)?fat\b/i], ['na', /sodium/i],
   ];
-  for (const line of lines) {
-    const low = line.toLowerCase();
+  let added = null, salt = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (n.kcal == null && /energy|calor/i.test(line)) {
-      const kc = line.match(/(\d+(?:\.\d+)?)\s*k\s*cal/i) || (/kcal/i.test(low) && !/kj/i.test(low) ? [null, first(line.replace(/^[^\d]*/, ''))] : null);
-      if (kc && kc[1] != null) n.kcal = Math.round(Number(kc[1]));
-      else { const kj = line.match(/(\d+(?:\.\d+)?)\s*k\s*j/i); if (kj) n.kcal = Math.round(Number(kj[1]) / 4.184); else { const v = first(line); if (v != null) n.kcal = Math.round(v); } }
+      const all = (re) => [...line.matchAll(new RegExp(re, 'gi'))].map((m) => Number(m[1]));
+      const kcs = all('(\\d+(?:\\.\\d+)?)\\s*k\\s*ca[l1i]'), kjs = all('(\\d+(?:\\.\\d+)?)\\s*k\\s*j');
+      let v = kcs.length ? pick(kcs) : kjs.length ? pick(kjs) / 4.184 : valueAt(i, /energy|calor\w*/i);
+      if (v != null) n.kcal = Math.round(v);
       continue;
     }
+    if (/salt/i.test(line) && !/sodium/i.test(line) && salt == null) salt = valueAt(i, /salt/i);
     for (const [k, re] of rules) {
-      if (n[k] != null || !re.test(line)) continue;
-      if (k === 'f' && /saturated|trans|mono|poly/i.test(line)) continue;
-      if (k === 'sug' && /added/i.test(line) && n.sug == null) { /* keep looking for total sugars, but take added if that's all there is */ }
-      let v = after(line, re);
+      if (!re.test(line)) continue;
+      if (k === 'f' && /saturated|trans|mono|poly|\bsat\b/i.test(line)) continue;
+      if (k === 'sug' && /added/i.test(line)) { if (added == null) added = valueAt(i, re); continue; } // prefer the total sugars line
+      if (n[k] != null) continue;
+      const tok = rawAt(i, re);
+      let v = tok == null ? null : Number(tok);
       if (v == null) continue;
+      rawTok[k] = tok;
       if (k === 'na' && /\bg\b/.test(line.slice(line.search(re))) && !/mg/i.test(line) && v < 10) v *= 1000;
       n[k] = k === 'na' ? Math.round(v) : r1(v);
       break;
     }
   }
+  if (n.sug == null && added != null) n.sug = r1(added);
+  if (n.na == null && salt != null) n.na = Math.round((salt / 2.5) * 1000); // salt g → sodium mg
+  // Misreads the energy check can't see. If the table prints one decimal place (7.2, 58.4), then a whole number
+  // like 25 for fibre or 41 for sugar lost its point, and "4.19" is "4.1 g" with the g read as a 9.
+  const repaired = [];
+  const gk = ['p', 'c', 'f', 'fib', 'sug'];
+  if (gk.filter((k) => /^\d+\.\d$/.test(rawTok[k] || '')).length >= 2) {
+    for (const k of gk) {
+      const t = rawTok[k]; if (!t || n[k] == null) continue;
+      if (/^\d+\.\d9$/.test(t)) { n[k] = r1(Number(t.slice(0, -1))); repaired.push(k); }
+      else if ((k === 'fib' || k === 'sug') && /^\d{3,}$/.test(t) && t.endsWith('9')) { n[k] = r1(Math.floor(Number(t) / 10) / 10); repaired.push(k); }
+      else if ((k === 'fib' || k === 'sug') && /^\d{2}$/.test(t)) { n[k] = r1(Number(t) / 10); repaired.push(k); }
+    }
+  }
+  for (const k of repairDecimals(n)) if (!repaired.includes(k)) repaired.push(k);
+  const check = checkLabel(n);
   const per100 = /100\s*(g|ml)/i.test(text);
   const servingM = String(text).match(/serv(?:ing|e)\s*size[^\d]*(\d+(?:\.\d+)?)\s*(g|ml)/i) || String(text).match(/per\s*serv(?:ing|e)[^\d(]*\(?\s*(\d+(?:\.\d+)?)\s*(g|ml)/i);
   const found = Object.values(n).filter((x) => x != null).length;
-  return { n, per100, servingG: servingM ? Number(servingM[1]) : null, found };
+  return { n, per100, servingG: servingM ? Number(servingM[1]) : null, found, columns: serveFirst ? 'serve-first' : 'per100-first', check, repaired };
+}
+
+/**
+ * Do the numbers hang together? Per 100 g, protein + carbs + fat can't top about 100 g, sugar and fibre can't top the
+ * carbs, and calories should land near 4×protein + 4×carbs + 9×fat. Returns { ok, problems }: ok is true or false,
+ * or null when there isn't enough to judge. A misread digit or a dropped decimal point is what usually breaks this.
+ */
+export function checkLabel(n, { per100 = true } = {}) {
+  const problems = [];
+  const v = (k) => (n[k] == null ? 0 : n[k]);
+  const lim = per100 ? 100 : 400;
+  for (const k of ['p', 'c', 'f', 'fib', 'sug']) if (n[k] != null && n[k] > lim) problems.push(`${k} is too big`);
+  if (per100 && v('p') + v('c') + v('f') > 108) problems.push('macros add up to more than 100 g');
+  if (n.sug != null && n.c != null && n.sug > n.c + 0.6) problems.push('sugar is more than the carbs');
+  if (n.fib != null && n.c != null && n.fib > n.c + 0.6) problems.push('fibre is more than the carbs');
+  if (n.kcal != null && n.kcal > (per100 ? 905 : 3000)) problems.push('calories too high');
+  if (n.kcal == null || n.p == null || n.c == null || n.f == null) return { ok: problems.length ? false : null, problems };
+  const e = 4 * n.p + 4 * n.c + 9 * n.f;
+  if (n.kcal > 20 && Math.abs(e - n.kcal) / n.kcal > 0.22) problems.push(`calories (${n.kcal}) don't match protein, carbs and fat (${Math.round(e)})`);
+  return { ok: problems.length === 0, problems };
+}
+
+/**
+ * A dropped decimal point turns 27.6 into 276. When the numbers don't add up, try dividing each suspicious whole number by 10
+ * and keep the smallest set of changes that makes them add up. Changes the object in place; returns the keys it fixed.
+ */
+function repairDecimals(n) {
+  if (checkLabel(n).ok !== false) return [];
+  const keys = ['p', 'c', 'f', 'fib', 'sug'].filter((k) => n[k] != null && Number.isInteger(n[k]) && n[k] >= 10);
+  let best = null;
+  for (let mask = 1; mask < 1 << keys.length; mask++) {
+    const t = { ...n }; const changed = [];
+    keys.forEach((k, i) => { if (mask & (1 << i)) { t[k] = r1(n[k] / 10); changed.push(k); } });
+    if (checkLabel(t).ok === true && (!best || changed.length < best.changed.length)) best = { t, changed };
+  }
+  if (!best) return [];
+  Object.assign(n, best.t);
+  return best.changed;
 }

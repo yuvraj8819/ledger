@@ -424,6 +424,92 @@ test('barcode products carry a diet from their ingredients', () => {
 });
 test('new health data defaults to every diet on', () => { const h = H.defaultHealth(); eq(h.diet, ['veg', 'egg', 'nonveg']); });
 
+// ---------- label reader hardening (2.2.1) ----------
+test('label: per-serve column first, with %RDA, still returns per-100 g', () => {
+  const r = N.parseLabel(`NUTRITION FACTS
+Per serve (30 g)  %RDA  Per 100 g
+Energy 154 kcal 8% 512 kcal
+Protein 2.2 g 4% 7.2 g
+Carbohydrate 17.5 g 7% 58.4 g
+Total Sugars 1.2 g 4.1 g
+Dietary Fibre 0.8 g 3% 2.5 g
+Total Fat 8.3 g 12% 27.6 g
+Sodium 195 mg 8% 650 mg`);
+  eq(r.n, { kcal: 512, p: 7.2, c: 58.4, f: 27.6, fib: 2.5, sug: 4.1, na: 650 }); eq(r.columns, 'serve-first');
+});
+test('label: numbers wrapped onto the next line, and letters read for digits', () => {
+  const r = N.parseLabel(`Per 100 g
+Energy
+512 kcal
+Protein
+7,2 g
+Carbohydrate
+5O.4 g
+Total Fat 2l.6 g
+Dietary Fibre 2.5 g`);
+  eq([r.n.kcal, r.n.p, r.n.c, r.n.f, r.n.fib], [512, 7.2, 50.4, 21.6, 2.5]);
+});
+test('label: kJ and kcal together, salt instead of sodium, added sugars never replace total sugars', () => {
+  const r = N.parseLabel(`Per 100 g
+Energy 2140 kJ / 512 kcal
+Protein 7.2 g
+Carbohydrate 58.4 g
+of which Sugars 4.1 g
+Added Sugars 3.0 g
+Total Fat 27.6 g
+Salt 1.6 g`);
+  eq([r.n.kcal, r.n.sug, r.n.na], [512, 4.1, 640]);
+  eq(N.parseLabel('Energy 400 kcal\nAdded Sugars 3.0 g').n.sug, 3);
+});
+
+test('label: "(g)" read as "(9)" is not a number, and a dropped decimal point is repaired when the numbers show it', () => {
+  const r = N.parseLabel(`NUTRITIONAL INFORMATION
+Per 100 g  Per serve (30 g)
+Energy (kcal) 512 154
+Protein (9) 7.2 2.2
+Carbohydrate (9) 58.4 17.5
+Dietary Fibre (9 2.5 08
+Total Fat (9) 276 83
+Sodium (mg) 650 195`);
+  eq([r.n.kcal, r.n.p, r.n.c, r.n.fib, r.n.f, r.n.na], [512, 7.2, 58.4, 2.5, 27.6, 650]); eq(r.repaired, ['f']); eq(r.check.ok, true);
+});
+test('label check: numbers that cannot be true are flagged, plausible ones pass', () => {
+  eq(N.checkLabel({ kcal: 512, p: 7.2, c: 58.4, f: 27.6, fib: 2.5, sug: 4.1 }).ok, true);
+  eq(N.checkLabel({ kcal: 512, p: 72, c: 58.4, f: 27.6 }).ok, false);
+  eq(N.checkLabel({ kcal: 512, p: 7.2, c: 5.8, f: 27.6, sug: 12 }).ok, false);
+  eq(N.checkLabel({ kcal: 512 }).ok, null);
+});
+
+test('label: whole numbers are left alone when the table prints whole numbers', () => {
+  const r = N.parseLabel(`Per 100 g
+Energy 380 kcal
+Protein 10 g
+Carbohydrate 60 g
+Total Sugars 12 g
+Dietary Fibre 15 g
+Total Fat 10 g`);
+  eq([r.n.p, r.n.c, r.n.sug, r.n.fib, r.n.f], [10, 60, 12, 15, 10]); eq(r.repaired, []);
+});
+test('label: dropped decimals and a glued-on "g" on fibre and sugar are repaired on one-decimal tables', () => {
+  const r = N.parseLabel(`Per 100 g
+Energy 512 kcal
+Protein 7.2 g
+Carbohydrate 58.4 g
+Total Sugars 41 g
+Dietary Fibre 2.59 g
+Total Fat 27.6 g`);
+  eq([r.n.sug, r.n.fib], [4.1, 2.5]); eq(r.repaired.sort(), ['fib', 'sug']);
+  eq(N.parseLabel(`Per 100 g\nProtein 7.2 g\nCarbohydrate 58.4 g\nTotal Sugars 419 g\nTotal Fat 27.6 g`).n.sug, 4.1);
+});
+
+test('WOW! Momo schezwan, burger buns and momo chutney are found, including common spellings', () => {
+  const names = (q) => F.searchFoods(q, [], { limit: 500 }).map((f) => f.name);
+  eq(names('shezwan momos').some((n) => /Paneer Schezwan Momo/.test(n)), true); eq(names('wow momo schezwan').length >= 12, true);
+  eq(names('burger buns').filter((n) => /Burger Bun/.test(n)).length >= 5, true); eq(names('burger bun').length, names('burger buns').length);
+  eq(names('momos chutney').length >= 10, true); eq(names('wow momo chutney').some((n) => /WOW! Momo Red Chutney/.test(n)), true);
+  eq(F.FOODS.filter((f) => f.brandGroup === 'WOW! Momo' && f.diet === 'nonveg').every((f) => /chicken/i.test(f.name)), true);
+});
+
 const failed = results.filter((r) => !r[1]);
 document.getElementById('sum').innerHTML = failed.length ? `<span class="bad">${failed.length} of ${results.length} failed</span>` : `<span class="ok">All ${results.length} tests passed</span>`;
 document.getElementById('out').innerHTML = results.map(([n, ok, m]) => `<div class="${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'} ${n}${m ? ' — ' + m : ''}</div>`).join('');

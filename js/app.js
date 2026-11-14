@@ -1883,12 +1883,12 @@ function createFoodSheet(pre = {}, { onSaved, note } = {}) {
 }
 
 async function runOCR(file) {
-  const sh = openSheet('Reading the label…', `<p class="lead" style="margin-top:0" id="ocr-msg">Getting the reader ready. The first time takes a little longer.</p><div class="meter"><i id="ocr-bar" style="width:4%"></i></div>`);
+  const sh = openSheet('Reading the label…', `<p class="lead" style="margin-top:0" id="ocr-msg">Getting the reader ready. The first time it downloads the reader (about 15 MB), so give it a minute on mobile data.</p><div class="meter"><i id="ocr-bar" style="width:4%"></i></div>`);
   try {
     const text = await SC.readLabel(file, (p) => { const b = $('#ocr-bar', sh); if (b) { b.style.width = `${Math.max(4, p * 100)}%`; $('#ocr-msg', sh).textContent = 'Reading the numbers…'; } });
     if (sheetStack.at(-1)?.sh === sh) closeSheet();
     const res = N.parseLabel(text);
-    if (!res.found) { warn('Couldn’t read the numbers. Try a sharper, straight-on photo of the table.'); return null; }
+    if (!res.found) { warn('Couldn’t read the numbers. Fill the frame with just the nutrition table, in good light, held flat and steady.'); return null; }
     return res;
   } catch (e) { if (sheetStack.at(-1)?.sh === sh) closeSheet(); warn(e.message || 'Couldn’t read the label'); return null; }
 }
@@ -1897,7 +1897,7 @@ async function labelFlow(day, { mode = 'log', onPick } = {}) {
   const file = await SC.pickPhoto(); if (!file) return;
   const res = await runOCR(file); if (!res) return;
   createFoodSheet({ n: res.n, per: res.per100 || !res.servingG ? '100' : 'serving', servingG: res.servingG, source: 'label', fromLabel: true }, {
-    note: `Read ${res.found} of 7 values from the photo. Check each one against the label, fix any misreads, and name it.`,
+    note: `Read ${res.found} of 7 values from the photo. ${res.repaired?.length ? `I corrected ${res.repaired.length === 1 ? 'one number' : 'some numbers'} that looked ten times too big (a missed decimal point). ` : ''}${res.check?.ok === false ? '<b>These numbers don’t add up, so something was misread.</b> ' : ''}Check each one against the label, fix any misreads, and name it.`,
     onSaved: (food) => amountSheet(food, { day, mode, onPick }),
   });
 }

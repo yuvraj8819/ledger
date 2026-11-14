@@ -449,11 +449,12 @@ for (const [group, [brand, rows]] of Object.entries(ALL)) {
 export const BRAND_GROUPS = [...new Set(Object.values(ALL).map(([b]) => b))];
 
 const norm = (s) => String(s || '').toLowerCase().normalize('NFKD').replace(/[’'`]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
-const SYN = { maggie: 'maggi', daal: 'dal', chawal: 'rice', roti: 'roti chapati', dominos: 'dominos', mcd: 'mcdonalds', burrito: 'burrito' };
+const SYN = { shezwan: 'schezwan', sezwan: 'schezwan', szechwan: 'schezwan', szechuan: 'schezwan', schezuan: 'schezwan', shezuan: 'schezwan', maggie: 'maggi', daal: 'dal', chawal: 'rice', roti: 'roti chapati', dominos: 'dominos', mcd: 'mcdonalds', burrito: 'burrito' };
 
 /** Ranked search over built-in foods and your own. Every word you type has to match somewhere. */
 export function searchFoods(query, mine = [], { limit = 40, brandGroup = null, diets = null } = {}) {
-  const words = norm(query).split(' ').filter(Boolean).map((w) => SYN[w] || w);
+  // plurals match their singular (buns → bun, momos → momo), and common spelling variants are mapped first
+  const words = norm(query).split(' ').filter(Boolean).map((w) => SYN[w] || w).map((w) => (w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w));
   const pool = [...mine, ...FOODS].filter((f) => dietOk(f, diets) && (!brandGroup || f.brandGroup === brandGroup || (brandGroup === 'Mine' && f.source !== 'db')));
   if (!words.length) return pool.slice(0, brandGroup ? 900 : limit);
   const scored = [];

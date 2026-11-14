@@ -1,6 +1,7 @@
 // Camera barcode scanning, barcode lookup and reading nutrition labels from a photo.
 // The scanning and OCR libraries load from a CDN the first time you use them, then the
 // browser caches them. Barcode lookups ask Open Food Facts (only the barcode number is sent).
+import { parseLabel } from './nutrition.js';
 const ZXING = 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js';
 const TESS = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
 
@@ -69,26 +70,105 @@ export async function lookupBarcode(code) {
   return j.status === 1 || j.product ? j.product : null;
 }
 
+// ---------------------------------------------------------------- reading a nutrition label
+// Phone photos are the hard case: tilted, shadowed, a little blurry, or sideways. So the photo is straightened out
+// and its contrast stretched, then read in up to four ways, keeping whichever pass finds the most nutrients.
+// (This used a canvas filter before, which Safari ignores, so on iPhone the photo was never actually cleaned up.)
+let ocrWorker = null, ocrIdle = null, ocrProgress = null;
+async function getWorker() {
+  clearTimeout(ocrIdle);
+  await loadScript(TESS);
+  if (!ocrWorker) {
+    try {
+      ocrWorker = await window.Tesseract.createWorker('eng', 1, { logger: (m) => { if (m.status === 'recognizing text') ocrProgress?.(m.progress); } });
+      await ocrWorker.setParameters({ preserve_interword_spaces: '1' });
+    } catch { ocrWorker = null; throw new Error('The label reader couldn’t start. Check your connection and try again.'); }
+  }
+  return ocrWorker;
+}
+const releaseWorker = () => { clearTimeout(ocrIdle); ocrIdle = setTimeout(() => { ocrWorker?.terminate().catch(() => {}); ocrWorker = null; }, 60000); };
+
 /** Text from a photo of a nutrition label. onProgress gets 0..1. */
 export async function readLabel(file, onProgress) {
-  await loadScript(TESS);
-  const img = await shrink(file, 1800);
-  const { data } = await window.Tesseract.recognize(img, 'eng', {
-    logger: (m) => { if (m.status === 'recognizing text') onProgress?.(m.progress); },
-  });
-  return data.text || '';
+  const worker = await getWorker();
+  try {
+    const gray = await prepare(file, 2400);
+    let bin = null; const binary = () => (bin ||= binarize(gray)); // black text on white, evens out shadows
+    const best = { text: '', score: -1, trusted: false };
+    let pass = 0; const planned = 6;
+    ocrProgress = (p) => onProgress?.(Math.min(0.98, (pass + p) / planned));
+    const run = async (cv, psm) => {
+      await worker.setParameters({ tessedit_pageseg_mode: psm });
+      const { data } = await worker.recognize(cv);
+      pass++;
+      const text = data.text || '', r = parseLabel(text);
+      // a pass wins if its numbers add up; otherwise by how many it found
+      const score = r.found + (r.check.ok === true ? 20 : 0);
+      if (score > best.score) { best.text = text; best.score = score; best.trusted = r.check.ok === true && r.found >= 5; }
+      return best.trusted;
+    };
+    // psm 6 = one block of text (best for tables), 4 = a single column, 11 = scattered text
+    const plan = [[() => gray, '6'], [binary, '6'], [binary, '4'], [() => gray, '4']];
+    for (const [img, psm] of plan) if (await run(img(), psm)) { onProgress?.(1); return best.text; }
+    for (const deg of [90, 270]) if (await run(rotated(binary(), deg), '6')) break; // photo taken sideways
+    onProgress?.(1);
+    return best.text;
+  } finally { ocrProgress = null; releaseWorker(); }
 }
 
-/** Downscales and greys a photo so OCR is faster and steadier. */
-async function shrink(file, max) {
-  const bmp = await createImageBitmap(file);
-  const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+/** Loads a photo upright (the browser applies the camera's rotation), scales it, and stretches its contrast. */
+async function prepare(file, max) {
+  let src, w, h, done = () => {};
+  try {
+    const url = URL.createObjectURL(file); done = () => URL.revokeObjectURL(url);
+    const img = new Image(); img.src = url; await img.decode();
+    src = img; w = img.naturalWidth; h = img.naturalHeight;
+  } catch { done(); src = await createImageBitmap(file); w = src.width; h = src.height; }
+  const k = Math.min(3, max / Math.max(w, h)); // small photos are enlarged (OCR drops decimal points on small print); big ones shrunk
   const c = document.createElement('canvas');
-  c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
-  const g = c.getContext('2d');
-  g.filter = 'grayscale(1) contrast(1.35)';
-  g.drawImage(bmp, 0, 0, c.width, c.height);
+  c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.imageSmoothingQuality = 'high'; g.drawImage(src, 0, 0, c.width, c.height); done();
+  return stretch(c);
+}
+/** Greyscale, then spread the 2nd–98th percentile of brightness over the full range so faint print stands out. */
+export function stretch(c) {
+  const g = c.getContext('2d', { willReadFrequently: true });
+  const im = g.getImageData(0, 0, c.width, c.height), d = im.data, hist = new Uint32Array(256);
+  for (let i = 0; i < d.length; i += 4) { const y = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000 | 0; d[i] = d[i + 1] = d[i + 2] = y; hist[y]++; }
+  const total = d.length / 4; let lo = 0, hi = 255, acc = 0;
+  for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= total * 0.02) { lo = v; break; } }
+  acc = 0; for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc >= total * 0.02) { hi = v; break; } }
+  if (hi - lo > 20) { const m = 255 / (hi - lo); for (let i = 0; i < d.length; i += 4) { const y = Math.max(0, Math.min(255, (d[i] - lo) * m)) | 0; d[i] = d[i + 1] = d[i + 2] = y; } }
+  g.putImageData(im, 0, 0);
   return c;
+}
+/** Black-and-white by local brightness (a window around each pixel), so shadows and uneven light stop mattering. */
+export function binarize(c) {
+  const w = c.width, h = c.height, g = c.getContext('2d', { willReadFrequently: true });
+  const im = g.getImageData(0, 0, w, h), d = im.data;
+  const integ = new Float64Array((w + 1) * (h + 1));
+  for (let y = 0; y < h; y++) { let row = 0; for (let x = 0; x < w; x++) { row += d[(y * w + x) * 4]; integ[(y + 1) * (w + 1) + x + 1] = integ[y * (w + 1) + x + 1] + row; } }
+  const r = Math.max(8, Math.round(Math.min(w, h) / 24)); // window radius
+  for (let y = 0; y < h; y++) {
+    const y0 = Math.max(0, y - r), y1 = Math.min(h, y + r + 1);
+    for (let x = 0; x < w; x++) {
+      const x0 = Math.max(0, x - r), x1 = Math.min(w, x + r + 1);
+      const sum = integ[y1 * (w + 1) + x1] - integ[y0 * (w + 1) + x1] - integ[y1 * (w + 1) + x0] + integ[y0 * (w + 1) + x0];
+      const mean = sum / ((x1 - x0) * (y1 - y0)), i = (y * w + x) * 4;
+      const v = d[i] < mean * 0.86 ? 0 : 255;
+      d[i] = d[i + 1] = d[i + 2] = v;
+    }
+  }
+  const out = document.createElement('canvas'); out.width = w; out.height = h;
+  out.getContext('2d').putImageData(im, 0, 0);
+  return out;
+}
+function rotated(c, deg) {
+  const r = document.createElement('canvas'); const swap = deg % 180 !== 0;
+  r.width = swap ? c.height : c.width; r.height = swap ? c.width : c.height;
+  const g = r.getContext('2d'); g.translate(r.width / 2, r.height / 2); g.rotate((deg * Math.PI) / 180); g.drawImage(c, -c.width / 2, -c.height / 2);
+  return r;
 }
 
 /** Opens the camera / photo picker. Must be called straight from a tap. */
