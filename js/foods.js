@@ -6,6 +6,7 @@
 // More Indian food, Indo-Chinese, momos, vegetables, fruit, snacks and fast food are in foods_more.js.
 import { MORE } from './foods_more.js';
 import { MENUS } from './foods_menus.js';
+import { OFFICIAL } from './foods_official.js';
 
 const DATA = {
   'Rice & biryani': ['Indian', [
@@ -398,7 +399,7 @@ const DATA = {
 };
 
 // brand groups that are kinds of food, not companies: no brand name shown beside the food
-const GENERIC = ['Indian', 'Basics', 'Quick foods', 'Drinks', 'Momos', 'Indo-Chinese', 'Vegetables', 'Fruits', 'Dry fruits & nuts', 'Snacks', 'Fast food'];
+const GENERIC = ['Korean ramen', 'Indian', 'Basics', 'Quick foods', 'Drinks', 'Momos', 'Indo-Chinese', 'Vegetables', 'Fruits', 'Dry fruits & nuts', 'Snacks', 'Fast food'];
 const slug = (s) => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 // ---------- veg / egg / non-veg ----------
 export const DIETS = [['veg', 'Veg'], ['egg', 'Egg'], ['nonveg', 'Non-veg']];
@@ -422,7 +423,14 @@ const mk = (group, brand, [name, label, g, kcal, p, c, f, fib, sug, na, aliases 
   id: `db:${slug(brand + ' ' + name + (extra.size || ''))}`, name: extra.name || name, brand: GENERIC.includes(brand) ? '' : brand,
   group, brandGroup: brand, aliases, serving: { label: extra.label || label, g: extra.g || g }, unit: brand === 'Drinks' || brand === 'Starbucks' || /\b(milk|lassi|chaas|kool|juice|soup|shake|coconut water|lemonade|jaljeera|panna|thandai|chai|coffee)\b/i.test(name) ? 'ml' : 'g',
   n: { kcal, p, c, f, fib, sug, na }, source: 'db', diet: dietOf(name, brand, diet || OVERRIDES[name]),
+  ...official(brand, extra.name || name, extra),
 });
+/** Numbers from the company's own published nutrition information replace the estimates (see foods_official.js). */
+function official(brand, name, extra) {
+  const o = OFFICIAL[`${brand}|${name}`];
+  if (!o || extra.size) return {};
+  return { official: o.src, officialN: { kcal: o.kcal, p: o.p, c: o.c, f: o.f, na: o.na, ...(o.sug != null ? { sug: o.sug } : {}), ...(o.fib != null ? { fib: o.fib } : {}) } };
+}
 const times = (row, x) => { const r = row.slice(); for (const i of [2, 3, 4, 5, 6, 7, 8, 9]) r[i] = i === 3 || i === 9 || i === 2 ? Math.round(row[i] * x) : Math.round(row[i] * x * 10) / 10; return r; };
 
 const ALL = {};
@@ -446,6 +454,7 @@ for (const [group, [brand, rows]] of Object.entries(ALL)) {
     }
   }
 }
+for (const f of FOODS) if (f.officialN) { Object.assign(f.n, f.officialN); delete f.officialN; }
 export const BRAND_GROUPS = [...new Set(Object.values(ALL).map(([b]) => b))];
 
 const norm = (s) => String(s || '').toLowerCase().normalize('NFKD').replace(/[’'`]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();

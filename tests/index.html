@@ -534,6 +534,23 @@ test('label: a dropped decimal is repaired even when another value is missing', 
   eq(r.n.f, 27.6); eq(r.repaired.includes('f'), true);
 });
 
+test('official McDonald\'s India figures replace estimates and are tagged; energy agrees with the macros', () => {
+  const f = (n) => F.FOODS.find((x) => x.brandGroup === "McDonald's" && x.name === n);
+  eq([f('McAloo Tikki Burger').n.kcal, f('McSpicy Paneer Burger').n.kcal, f('McSpicy Chicken Burger').n.kcal], [353, 705, 481]);
+  eq(f('McAloo Tikki Burger').official, "McDonald's India website");
+  eq(f('McSpicy Paneer Burger').n.f, 46); eq(f('Fries (Medium)').official, undefined, 'estimates stay untagged');
+  const off = F.FOODS.filter((x) => x.official);
+  if (off.length < 25) throw new Error('official rows missing');
+  for (const x of off) { const e = 4 * x.n.p + 4 * x.n.c + 9 * x.n.f; if (Math.abs(e - x.n.kcal) / x.n.kcal > 0.1) throw new Error(`${x.name}: ${x.n.kcal} vs ${Math.round(e)}`); }
+});
+test('Buldak and Shin ramens, carbonara sauce, and snacks are found, with sensible diets', () => {
+  const names = (q) => F.searchFoods(q, [], { limit: 500 });
+  eq(names('buldak').length >= 14, true); eq(names('buldak carbonara').some((x) => /Carbonara Hot Chicken Flavor Ramen/.test(x.name)), true);
+  eq(names('carbonara sauce').length >= 2, true); eq(names('shin ramyun').length >= 6, true);
+  eq(F.FOODS.find((x) => /Shin Ramyun Veggie/.test(x.name)).diet, 'veg'); eq(F.FOODS.find((x) => /Buldak Carbonara Hot Chicken/.test(x.name)).diet, 'nonveg');
+  eq(names('lays').length >= 5, true); eq(names('makhana').length >= 3, true); eq(names('chikki').length >= 3, true); eq(names('pringles').length >= 2, true);
+});
+
 const failed = results.filter((r) => !r[1]);
 document.getElementById('sum').innerHTML = failed.length ? `<span class="bad">${failed.length} of ${results.length} failed</span>` : `<span class="ok">All ${results.length} tests passed</span>`;
 document.getElementById('out').innerHTML = results.map(([n, ok, m]) => `<div class="${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'} ${n}${m ? ' — ' + m : ''}</div>`).join('');
