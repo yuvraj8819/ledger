@@ -2038,53 +2038,61 @@ document.addEventListener('click', (ev) => {
 });
 
 // ================================================================ PIN
+/**
+ * A passcode field that uses the phone's own number keyboard. The dots are drawn from what has been typed;
+ * the real input sits invisibly over them, so a tap on the dots opens the keyboard. (A custom on-screen pad
+ * was slower than the system one, and the system keyboard works with hardware keyboards too.)
+ */
 function pinPad(id) {
-  return `<div class="pin-dots" id="${id}-dots">${'<i></i>'.repeat(4)}</div>
-    <div class="pad" id="${id}-pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `<button data-n="${n}">${n}</button>`).join('')}<button class="ghost" data-n="cancel"></button><button data-n="0">0</button><button class="ghost" data-n="del" aria-label="Delete">⌫</button></div>`;
+  return `<div class="pin-wrap"><div class="pin-dots" id="${id}-dots">${'<i></i>'.repeat(4)}</div>
+    <input class="pin-input" id="${id}-in" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" aria-label="Passcode, 4 digits"></div>`;
 }
-function wirePad(root, id, onComplete, { cancelLabel } = {}) {
-  let pin = '';
-  const dots = $(`#${id}-dots`, root);
-  const cancel = $(`#${id}-pad [data-n="cancel"]`, root);
-  if (cancelLabel) cancel.textContent = cancelLabel;
-  const draw = () => $$('i', dots).forEach((d, i) => d.classList.toggle('on', i < pin.length));
-  const press = (n) => {
-    if (n === 'del') pin = pin.slice(0, -1);
-    else if (n === 'cancel') return cancelLabel && onComplete(null);
-    else if (pin.length < 4) pin += n;
+function wirePad(root, id, onComplete) {
+  const dots = $(`#${id}-dots`, root), inp = $(`#${id}-in`, root);
+  let busy = false;
+  const draw = () => $$('i', dots).forEach((d, k) => d.classList.toggle('on', k < inp.value.length));
+  const focus = () => { try { inp.focus({ preventScroll: true }); } catch { inp.focus(); } };
+  inp.addEventListener('input', async () => {
+    inp.value = inp.value.replace(/\D/g, '').slice(0, 4);
     draw();
-    if (pin.length === 4) setTimeout(async () => { const ok = await onComplete(pin); if (ok === false) { dots.classList.add('shake'); setTimeout(() => dots.classList.remove('shake'), 400); } pin = ''; draw(); }, 120);
-  };
-  $(`#${id}-pad`, root).addEventListener('click', (e) => { const n = e.target.closest('[data-n]')?.dataset.n; if (n) press(n); });
-  return press;
+    if (inp.value.length < 4 || busy) return;
+    busy = true;
+    const ok = await onComplete(inp.value);
+    inp.value = ''; draw(); busy = false;
+    if (ok === false) { dots.classList.add('shake'); setTimeout(() => dots.classList.remove('shake'), 400); }
+    focus(); // keep the keyboard up for the next try
+  });
+  return { focus, input: inp };
 }
-let lockKeyHandler;
 function renderLock() {
   let el = $('.lock#lock');
-  if (!ui.locked || !state.settings.pinHash) { el?.remove(); if (lockKeyHandler) { removeEventListener('keydown', lockKeyHandler); lockKeyHandler = null; } return; }
+  if (!ui.locked || !state.settings.pinHash) { el?.remove(); return; }
   if (el) return;
   el = document.createElement('div'); el.className = 'lock'; el.id = 'lock';
   el.innerHTML = `<div class="logo"><img src="icons/icon-192.png" alt="Balance"></div><h2>Balance</h2><div class="sub">Enter passcode</div>${pinPad('lk')}`;
   document.body.append(el);
   let tries = 0;
-  const press = wirePad(el, 'lk', async (pin) => {
-    if ((await S.hashPin(pin)) === state.settings.pinHash) { ui.locked = false; X.play('unlock'); el.id = ''; el.classList.add('out'); setTimeout(() => el.remove(), 430); removeEventListener('keydown', lockKeyHandler); lockKeyHandler = null; return true; }
+  const pad = wirePad(el, 'lk', async (pin) => {
+    if ((await S.hashPin(pin)) === state.settings.pinHash) { ui.locked = false; X.play('unlock'); el.id = ''; el.classList.add('out'); setTimeout(() => el.remove(), 330); return true; }
     X.play('error');
     tries++; if (tries >= 3) $('.sub', el).textContent = 'Wrong passcode. Forgot it? Clear this site’s data, then restore a backup.'; else $('.sub', el).textContent = 'Wrong passcode, try again';
     return false;
   });
-  lockKeyHandler = (e) => { if (/^[0-9]$/.test(e.key)) press(e.key); if (e.key === 'Backspace') press('del'); };
-  addEventListener('keydown', lockKeyHandler);
+  el.addEventListener('pointerdown', () => pad.focus()); // a tap anywhere opens the keyboard
+  pad.focus();
+  // iPhone only opens the keyboard from a tap; if it didn't open by itself, say what to do
+  setTimeout(() => { if (el.isConnected && document.activeElement !== pad.input) { const sub = $('.sub', el); if (sub && sub.textContent === 'Enter passcode') sub.textContent = 'Tap to enter your passcode'; } }, 400);
 }
 function setPinFlow(done) {
   const sh = openSheet('Set a passcode', `<div style="display:flex;flex-direction:column;align-items:center"><p class="lead" id="pin-msg">Choose 4 digits</p>${pinPad('sp')}</div>`);
   let first = null;
-  wirePad(sh, 'sp', async (pin) => {
-    if (!pin) { closeSheet(); return; }
+  const pad = wirePad(sh, 'sp', async (pin) => {
     if (!first) { first = pin; $('#pin-msg', sh).textContent = 'Enter it again'; return true; }
-    if (pin !== first) { X.play('error'); first = null; $('#pin-msg', sh).textContent = "Didn't match — choose 4 digits"; return false; }
+    if (pin !== first) { X.play('error'); first = null; $('#pin-msg', sh).textContent = "Didn't match. Choose 4 digits"; return false; }
     state.settings.pinHash = await S.hashPin(pin); S.save(state); closeSheet(); toast('Passcode on. Tap the lock at the top to lock Balance any time.'); done?.(); return true;
-  }, { cancelLabel: 'Cancel' });
+  });
+  pad.focus(); // still inside the tap that opened the sheet, so the keyboard comes up
+  sh.addEventListener('pointerdown', (e) => { if (e.target.closest('.pin-wrap')) pad.focus(); });
 }
 
 // ================================================================ events

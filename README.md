@@ -124,7 +124,7 @@ Motion is off when the phone has "reduce motion" turned on. Switching tabs only 
 
 ### Passcode, hiding and updates
 
-- **Passcode:** the lock button at the top locks Ledger straight away, or sets a passcode if there isn't one yet. With a passcode, Ledger also locks when it's been in the background (Settings → Privacy & lock sets how long).
+- **Passcode:** the lock button at the top locks Ledger straight away, or sets a passcode if there isn't one yet. With a passcode, Ledger also locks when it's been in the background (Settings → Privacy & lock sets how long). You type it on the phone's own number keyboard (tap the dots if it doesn't open by itself), so it feels like the iPhone lock screen.
 - **Hide amounts:** the eye button blurs every number on screen, including totals, counts, dates and numbers inside sentences, in sheets, search results and messages. The digits you're typing and the passcode/calculator keys stay readable.
 - **Updates:** the installed app checks for a new version whenever it comes back to the front, and reloads into it. It waits if you're in the middle of filling in a sheet, then shows "Updated to version …". The running version is at the bottom of Settings.
 
