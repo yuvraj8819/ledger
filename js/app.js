@@ -1724,7 +1724,7 @@ function profileSheet(first = false) {
 
 // ---------------------------------------------------------------- picker
 /** Search and pick a food. mode 'log' adds it to the day; mode 'build' hands it to a meal being made. */
-const FIRST_GROUPS = ['Indian', 'Momos', 'WOW! Momo', 'Indo-Chinese', 'Vegetables', 'Fruits', 'Snacks', 'Fast food', 'Dry fruits & nuts', 'Quick foods', 'Drinks', 'Basics'];
+const FIRST_GROUPS = ['Indian', 'Momos', 'WOW! Momo', 'Indo-Chinese', 'Vegetables', 'Fruits', 'Condiments', 'Pasta & grains', 'Snacks', 'Fast food', 'Dry fruits & nuts', 'Quick foods', 'Drinks', 'Basics'];
 function pickFood({ day, mode = 'log', onPick } = {}) {
   let q = '', brand = null;
   const lf = loggedFoods();

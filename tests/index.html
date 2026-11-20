@@ -559,6 +559,23 @@ test('ramen: Korean brands, Indomie, Maggi cups, Yippee, Nissin, Maruchan and re
   eq(F.FOODS.find((x) => /Ajitsuke Tamago/.test(x.name)).diet, 'egg'); eq(F.FOODS.find((x) => /Yippee Magic Masala/.test(x.name)).diet, 'veg');
 });
 
+test('foods: sauces, condiments and raw pasta can be found, with sensible diet tags', () => {
+  const find = (q, o = {}) => F.searchFoods(q, [], { limit: 80, ...o });
+  const has = (q, part) => { if (!find(q).some((f) => `${f.brand} ${f.name}`.toLowerCase().includes(part))) throw new Error(`"${q}" should find "${part}"`); };
+  has('ketchup', 'tomato ketchup'); has('soy sauce', 'soy sauce'); has('sriracha', 'sriracha'); has('schezwan sauce', 'schezwan sauce'); has('mayonnaise', 'mayonnaise');
+  has('mint chutney', 'mint chutney'); has('pickle', 'mango pickle'); has('honey', 'honey'); has('vinegar', 'vinegar'); has('pesto', 'pesto'); has('hummus', 'hummus');
+  has('wheat pasta', 'whole wheat pasta'); has('raw pasta', 'spaghetti'); has('spaghetti', 'spaghetti (durum wheat, dry)'); has('penne', 'penne'); has('macaroni', 'macaroni');
+  has('vermicelli', 'vermicelli'); has('chickpea pasta', 'chickpea pasta'); has('atta', 'whole wheat flour'); has('basmati', 'basmati rice (raw)'); has('toor dal', 'toor dal (raw)');
+  const diet = (q, name) => (find(q).find((f) => f.name === name) || {}).diet;
+  eq(diet('mayonnaise', 'Mayonnaise (regular)'), 'egg'); eq(diet('mayonnaise', 'Veg mayonnaise (eggless)'), 'veg');
+  eq(diet('oyster', 'Oyster sauce'), 'nonveg'); eq(diet('fish sauce', 'Fish sauce'), 'nonveg'); eq(diet('worcestershire', 'Worcestershire sauce'), 'nonveg');
+  eq(diet('ketchup', 'Tomato ketchup'), 'veg'); eq(diet('egg pasta', 'Egg pasta (dry)'), 'egg'); eq(diet('whole wheat pasta', 'Whole wheat pasta (atta, dry)'), 'veg');
+  for (const g of ['Condiments', 'Pasta & grains']) { if (!F.BRAND_GROUPS.includes(g)) throw new Error('missing group ' + g); eq(F.searchFoods('', [], { brandGroup: g }).length > 40, true); }
+  // the veg filter hides the egg and fish ones
+  const vegOnly = F.searchFoods('sauce', [], { limit: 200, diets: ['veg'] }).map((f) => f.name);
+  eq(vegOnly.includes('Oyster sauce') || vegOnly.includes('Fish sauce'), false);
+});
+
 const failed = results.filter((r) => !r[1]);
 document.getElementById('sum').innerHTML = failed.length ? `<span class="bad">${failed.length} of ${results.length} failed</span>` : `<span class="ok">All ${results.length} tests passed</span>`;
 document.getElementById('out').innerHTML = results.map(([n, ok, m]) => `<div class="${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'} ${n}${m ? ' — ' + m : ''}</div>`).join('');

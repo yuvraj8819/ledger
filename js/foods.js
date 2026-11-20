@@ -5,6 +5,7 @@
 // Row: [name, serving label, grams (or ml), kcal, protein g, carbs g, fat g, fibre g, sugar g, sodium mg, aliases?]
 // More Indian food, Indo-Chinese, momos, vegetables, fruit, snacks and fast food are in foods_more.js.
 import { MORE } from './foods_more.js';
+import { PANTRY } from './foods_pantry.js'; // sauces, condiments, dry pasta and raw staples
 import { MENUS } from './foods_menus.js';
 import { OFFICIAL } from './foods_official.js';
 
@@ -399,7 +400,7 @@ const DATA = {
 };
 
 // brand groups that are kinds of food, not companies: no brand name shown beside the food
-const GENERIC = ['Ramen & noodles', 'Korean ramen', 'Indian', 'Basics', 'Quick foods', 'Drinks', 'Momos', 'Indo-Chinese', 'Vegetables', 'Fruits', 'Dry fruits & nuts', 'Snacks', 'Fast food'];
+const GENERIC = ['Condiments', 'Pasta & grains', 'Ramen & noodles', 'Korean ramen', 'Indian', 'Basics', 'Quick foods', 'Drinks', 'Momos', 'Indo-Chinese', 'Vegetables', 'Fruits', 'Dry fruits & nuts', 'Snacks', 'Fast food'];
 const slug = (s) => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 // ---------- veg / egg / non-veg ----------
 export const DIETS = [['veg', 'Veg'], ['egg', 'Egg'], ['nonveg', 'Non-veg']];
@@ -434,7 +435,7 @@ function official(brand, name, extra) {
 const times = (row, x) => { const r = row.slice(); for (const i of [2, 3, 4, 5, 6, 7, 8, 9]) r[i] = i === 3 || i === 9 || i === 2 ? Math.round(row[i] * x) : Math.round(row[i] * x * 10) / 10; return r; };
 
 const ALL = {};
-for (const src of [DATA, MORE, MENUS]) for (const [group, [brand, rows]] of Object.entries(src)) {
+for (const src of [DATA, MORE, MENUS, PANTRY]) for (const [group, [brand, rows]] of Object.entries(src)) {
   if (ALL[group]) ALL[group][1] = ALL[group][1].concat(rows); else ALL[group] = [brand, rows.slice()];
 }
 
