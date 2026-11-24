@@ -123,13 +123,15 @@ export const sundaysIn = (from, days) => { let n = 0; for (let i = 0; i < days; 
  *   exerciseKcal  calories you burn in a workout (on top of normal daily life)
  *   exerciseDays  workout days a week (1–7)
  *   sundayKcal    what you plan to eat on Sundays (optional); the other days adjust so the plan still lands
+ *   restingKcal   your own resting burn, e.g. Resting Energy from Apple Watch (optional)
  *
  * Burn = resting burn × 1.2 (a normal day without workouts) + the average daily exercise burn.
+ * With your own resting number it is resting + exercise, the way the Watch adds Resting and Active Energy.
  * Safety, as in the daily target: never eat below your resting burn, lose at most 1% of body weight a week
  * (0.5% and at most 0.5 kg under 18), gain at most 0.5 kg a week. If the date asks for more than that, the plan
  * shows the pace that is safe and the date it reaches the target instead.
  */
-export function weightPlan({ profile, currentKg, targetKg, today, targetDate, exerciseKcal = 0, exerciseDays = 7, sundayKcal = null }) {
+export function weightPlan({ profile, currentKg, targetKg, today, targetDate, exerciseKcal = 0, exerciseDays = 7, sundayKcal = null, restingKcal = null }) {
   if (!profile || !(currentKg > 0) || !(targetKg > 0)) return { ok: false, why: 'missing' };
   const t = targets({ ...profile, weightKg: currentKg, activity: 'sedentary', goal: 'maintain', pace: 0 });
   if (!t) return { ok: false, why: 'missing' };
@@ -139,7 +141,8 @@ export function weightPlan({ profile, currentKg, targetKg, today, targetDate, ex
   const change = Math.abs(currentKg - targetKg);
   const dir = currentKg - targetKg > 0.05 ? 'lose' : targetKg - currentKg > 0.05 ? 'gain' : 'hold';
   const exAvg = Math.round((Math.max(0, Number(exerciseKcal) || 0) * Math.min(7, Math.max(0, Number(exerciseDays) || 0))) / 7);
-  const bmr = t.bmr, base = t.maintenance, burn = base + exAvg;
+  const resting = Number(restingKcal) > 0 ? Math.round(Number(restingKcal)) : null;
+  const bmr = resting ?? t.bmr, base = resting ?? t.maintenance, burn = base + exAvg;
   const notes = [];
 
   // what the date asks for
@@ -200,6 +203,59 @@ export function weightPlan({ profile, currentKg, targetKg, today, targetDate, ex
     horizon, endDate: addDays(today, horizon), sundays,
     weekday, sunday, sundayAdjusted, maxSunday, weeklyTotal,
     paceKgWeek: Math.round(pace * 100) / 100, dailyGap: Math.round(Math.abs(burn - intake)),
+    notes, customResting: !!resting,
+  };
+}
+
+/**
+ * When will you reach a target weight, at the calories you eat and burn?
+ *   eatKcal       calories you eat on a usual day
+ *   sundayKcal    what you eat on Sundays, if it's different (optional)
+ *   exerciseKcal  active calories a day (Active Energy on Apple Watch), with exerciseDays 7, or per workout with fewer days
+ *   restingKcal   your own resting burn (optional; otherwise estimated, including a normal day's movement)
+ * Uses 7,700 kcal for a kilo. Works from today and your latest weight, so it moves as you weigh in.
+ */
+export function weightEta({ profile, currentKg, targetKg, today, eatKcal, sundayKcal = null, exerciseKcal = 0, exerciseDays = 7, restingKcal = null }) {
+  if (!profile || !(currentKg > 0) || !(targetKg > 0)) return { ok: false, why: 'missing' };
+  const eat = Number(eatKcal);
+  if (!(eat > 0)) return { ok: false, why: 'eat' };
+  const t = targets({ ...profile, weightKg: currentKg, activity: 'sedentary', goal: 'maintain', pace: 0 });
+  if (!t) return { ok: false, why: 'missing' };
+  const teen = profile.age < 18;
+  const resting = Number(restingKcal) > 0 ? Math.round(Number(restingKcal)) : null;
+  const exAvg = Math.round((Math.max(0, Number(exerciseKcal) || 0) * Math.min(7, Math.max(0, Number(exerciseDays) || 0))) / 7);
+  const bmr = resting ?? t.bmr, base = resting ?? t.maintenance, burn = base + exAvg;
+  const sun = Number(sundayKcal) > 0 ? Number(sundayKcal) : null;
+  const avg = sun ? (eat * 6 + sun) / 7 : eat;          // the week's average, Sundays included
+  const gap = burn - avg;                                 // + means eating under your burn
+  const change = Math.abs(currentKg - targetKg);
+  const dir = currentKg - targetKg > 0.05 ? 'lose' : targetKg - currentKg > 0.05 ? 'gain' : 'hold';
+  const pace = (Math.abs(gap) * 7) / KCAL_PER_KG;         // kg a week, in whichever direction the gap points
+  const cap = dir === 'lose' ? (teen ? Math.min(0.5, currentKg * 0.005) : currentKg * 0.01) : 0.5;
+  const notes = [];
+  let status = 'ok', days = null, date = null, suggest = null;
+  if (dir === 'hold') status = 'there';
+  else if ((dir === 'lose' && gap <= 0) || (dir === 'gain' && gap >= 0)) {
+    status = 'never';
+    suggest = roundTo(dir === 'lose' ? Math.max(bmr, burn - 550) : burn + 550, 5); // about 0.5 kg a week
+  } else {
+    days = Math.ceil(change / (Math.abs(gap) / KCAL_PER_KG));
+    date = addDays(today, days);
+    if (days > 730) { status = 'long'; notes.push({ t: 'That is over two years away', s: 'A slightly bigger gap between what you eat and burn gets you there much sooner.' }); }
+    if (pace > cap + 1e-9) notes.push({ t: `That's faster than ${r1(cap)} kg a week`, s: `${r1(pace)} kg a week is more than is safe${teen && dir === 'lose' ? ' while you are still growing' : ''}, and real weight loss usually slows down when it is this fast.`, warn: true });
+  }
+  if (dir === 'lose' && avg < bmr) notes.push({ t: 'That is under your resting burn', s: `${Math.round(avg)} kcal a day is less than the ${bmr} kcal your body uses at rest. Eating that little for weeks costs muscle.`, warn: true });
+  if (dir === 'lose' && profile.heightCm && !teen) {
+    const b = r1(targetKg / (profile.heightCm / 100) ** 2);
+    if (b < 18.5) notes.push({ t: `${targetKg} kg is a BMI of ${b}`, s: 'That is under the healthy range for your height. A doctor or dietitian can help set a safer target.', warn: true });
+  }
+  if (teen) notes.push({ t: 'Check with a doctor', s: 'Under 18, any weight-loss plan is best agreed with a doctor.' });
+  return {
+    ok: true, mode: 'eta', dir, status, change: r1(change),
+    bmr, base, exAvg, burn, customResting: !!resting,
+    avgIntake: Math.round(avg), gap: Math.round(gap), paceKgWeek: Math.round(pace * 100) / 100,
+    days, weeks: days != null ? r1(days / 7) : null, date, suggest,
+    weekday: roundTo(eat, 5), sunday: roundTo(sun ?? eat, 5),
     notes,
   };
 }

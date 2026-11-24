@@ -1551,7 +1551,14 @@ const latestWeight = () => { const h = state.health; const w = h.weights.slice()
 function planNow() {
   const h = state.health, pl = h.plan;
   if (!pl || !h.profile) return null;
-  return N.weightPlan({ profile: h.profile, currentKg: latestWeight(), targetKg: pl.targetKg, today: today(), targetDate: pl.targetDate, exerciseKcal: pl.exerciseKcal, exerciseDays: pl.exerciseDays, sundayKcal: pl.sundayKcal });
+  const common = { profile: h.profile, currentKg: latestWeight(), targetKg: pl.targetKg, today: today(), exerciseKcal: pl.exerciseKcal, exerciseDays: pl.exerciseDays, sundayKcal: pl.sundayKcal, restingKcal: pl.restingKcal };
+  return pl.mode === 'eta' ? N.weightEta({ ...common, eatKcal: pl.eatKcal }) : N.weightPlan({ ...common, targetDate: pl.targetDate });
+}
+/** What you've actually been eating: the average of the last 7 finished days with food logged (2 or more days). */
+function recentIntake() {
+  const h = state.health, t = today(), xs = [];
+  for (let i = 1; i <= 7; i++) { const k = H.caloriesOf(h.days[C.addDays(t, -i)]); if (k > 0) xs.push(k); }
+  return xs.length >= 2 ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null;
 }
 /** While a plan drives the goal, today's calorie goal (and the Sunday one) follow it. Returns true if anything changed. */
 function syncPlanGoal() {
@@ -1571,6 +1578,9 @@ function releasePlanGoal() {
   const tg = TG(); if (tg) { h.calorieGoal = tg.target; h.autoGoal = true; }
 }
 
+const burnLine = (r) => `You burn about ${nf0.format(r.burn)} a day: ${nf0.format(r.base)} ${r.customResting ? 'resting (your number)' : 'resting and daily life'}${r.exAvg ? `, plus ${nf0.format(r.exAvg)} active` : ''}.`;
+const notesHtml = (notes) => `<div class="notes">${notes.map((n) => `<div class="note ${n.warn ? 'warn' : ''}"><b>${esc(n.t)}</b><span>${esc(n.s)}</span></div>`).join('')}</div>`;
+
 function planResultHtml(r, { targetKg, targetDate }) {
   if (!r.ok) return `<p class="faint" style="margin:14px 2px 0">${r.why === 'date' ? 'Pick a date after today.' : 'Fill in your current and target weight to see the plan.'}</p>`;
   const up = r.dir === 'gain', hold = r.dir === 'hold';
@@ -1586,9 +1596,37 @@ function planResultHtml(r, { targetKg, targetDate }) {
       <div><span>You burn</span><b class="num">${nf0.format(r.burn)}</b></div>
       <div><span>${up ? 'Extra' : 'Deficit'}</span><b class="num">${nf0.format(r.dailyGap)}</b></div>
     </div>`}
-    <p class="faint plan-how">You burn about ${nf0.format(r.burn)} a day: ${nf0.format(r.base)} resting and daily life${r.exAvg ? `, plus ${nf0.format(r.exAvg)} from exercise` : ''}.${r.sundays ? ` ${r.sundays} Sunday${r.sundays === 1 ? '' : 's'} in this plan.` : ''}</p>
+    <p class="faint plan-how">${burnLine(r)}${r.sundays ? ` ${r.sundays} Sunday${r.sundays === 1 ? '' : 's'} in this plan.` : ''}</p>
     ${r.tooFast ? `<div class="notes"><div class="note warn"><b>${targetDate ? `${esc(fmtDay(targetDate))} is too soon` : 'That date is too soon'}</b><span>The safe plan reaches ${targetKg} kg on ${esc(fmtDay(r.safe.date))} instead, at ${r.safe.paceKgWeek} kg a week.</span></div></div>` : ''}
-    <div class="notes">${r.notes.map((n) => `<div class="note ${n.warn ? 'warn' : ''}"><b>${esc(n.t)}</b><span>${esc(n.s)}</span></div>`).join('')}</div>
+    ${notesHtml(r.notes)}
+  </div>`;
+}
+
+/** "When will I get there?": the estimated date at the calories you eat and burn. */
+function etaResultHtml(r, { targetKg }) {
+  if (!r.ok) return `<p class="faint" style="margin:14px 2px 0">${r.why === 'eat' ? 'Enter the calories you eat on a usual day.' : 'Fill in your weight now and your target weight.'}</p>`;
+  const up = r.dir === 'gain';
+  let head;
+  if (r.status === 'there') head = `<div class="eyebrow">You're already at ${targetKg} kg</div><div class="plan-sun">Eat about your burn, ${nf0.format(r.burn)} kcal a day, to stay there.</div>`;
+  else if (r.status === 'never') head = `<div class="eyebrow">At these numbers</div><div class="plan-head">You won't reach ${targetKg} kg</div><div class="plan-sun">${r.gap === 0 ? 'Your weight would stay about the same.' : `You'd ${r.gap > 0 ? 'lose' : 'gain'} about <b class="num">${r.paceKgWeek} kg</b> a week instead.`}</div>`;
+  else {
+    const short = r.days < 14;
+    head = `<div class="eyebrow">You'd reach ${targetKg} kg in about</div>
+      <div class="h-big num">${short ? r.days : nf0.format(Math.round(r.weeks))}<small>${short ? (r.days === 1 ? 'day' : 'days') : 'weeks'}</small></div>
+      <div class="plan-sun">Around <b>${esc(fmtDay(r.date))}</b>${short ? '' : ` · ${nf0.format(r.days)} days`}</div>`;
+  }
+  return `<div class="plan-out">${head}
+    ${r.status === 'there' ? '' : `<div class="tg-grid plan-facts">
+      <div><span>You eat</span><b class="num">${nf0.format(r.avgIntake)}</b></div>
+      <div><span>You burn</span><b class="num">${nf0.format(r.burn)}</b></div>
+      <div><span>${r.gap >= 0 ? 'Deficit' : 'Extra'}</span><b class="num">${nf0.format(Math.abs(r.gap))}</b></div>
+      <div><span>${up ? 'To gain' : 'To lose'}</span><b class="num">${r.change} kg</b></div>
+      <div><span>Pace</span><b class="num">${r.paceKgWeek} kg/wk</b></div>
+      <div><span>Weeks</span><b class="num">${r.weeks ?? '—'}</b></div>
+    </div>`}
+    <p class="faint plan-how">${burnLine(r)}${r.sunday !== r.weekday ? ` You eat ${nf0.format(r.weekday)} on most days and ${nf0.format(r.sunday)} on Sundays: ${nf0.format(r.avgIntake)} a day on average.` : ''} A kilo is taken as 7,700 kcal, so treat the date as a guide.</p>
+    ${r.status === 'never' && r.suggest ? `<div class="notes"><div class="note"><b>To ${up ? 'gain' : 'lose'} about 0.5 kg a week</b><span>Eat about ${nf0.format(r.suggest)} kcal a day.</span></div></div>` : ''}
+    ${notesHtml(r.notes)}
   </div>`;
 }
 
@@ -1596,18 +1634,23 @@ function planCard() {
   const h = state.health, pl = h.plan;
   const head = (edit) => `<div class="head"><div class="eyebrow">${I.scale} Weight goal</div>${edit ? `<button class="link" data-act="h-plan">Edit</button>` : ''}</div>`;
   if (!pl) return `<section class="card h-card plan-card">${head(false)}
-    <p class="muted" style="margin:10px 0 14px;font-size:14.5px">Pick the weight you want and a date. Balance works out how much to eat each day to get there, with room for Sundays and your exercise.</p>
+    <p class="muted" style="margin:10px 0 14px;font-size:14.5px">Pick the weight you want. Balance works out how much to eat to reach it by a date, or, from the calories you eat and burn, when you'll get there.</p>
     <button class="btn accent" data-act="h-plan">Plan my weight goal</button></section>`;
   const r = planNow();
-  const pr = N.planProgress(pl, h.weights, today());
+  const eta = pl.mode === 'eta';
+  const end = eta ? (r?.ok && r.date ? r.date : null) : pl.targetDate;
+  const pr = N.planProgress({ ...pl, targetDate: end || C.addDays(pl.startDate, 365) }, h.weights, today());
   const goalMove = pl.startKg - pl.targetKg;
   const done = Math.max(0, goalMove >= 0 ? pr.moved : -pr.moved);
-  const say = pr.status === 'on' ? 'On track' : pr.status === 'ahead' ? `${Math.abs(pr.off)} kg ahead of plan` : `${Math.abs(pr.off)} kg behind. Today's number already makes up for it`;
+  const say = eta ? '' : pr.status === 'on' ? 'On track' : pr.status === 'ahead' ? `${Math.abs(pr.off)} kg ahead of plan` : `${Math.abs(pr.off)} kg behind. Today's number already makes up for it`;
+  const when = eta ? (end ? `around ${esc(fmtDay(end))}` : '') : `by ${esc(fmtDay(pl.targetDate))}`;
+  const result = !r ? '' : !r.ok && r.why === 'date' ? '<p class="faint" style="margin:14px 2px 0">Your target date has passed. Tap Edit to set a new one.</p>'
+    : eta ? etaResultHtml(r, { targetKg: pl.targetKg }) : planResultHtml(r, { targetKg: pl.targetKg, targetDate: pl.targetDate });
   return `<section class="card h-card plan-card">${head(true)}
-    <div class="plan-line"><b class="num">${latestWeight()} kg</b><span class="faint">to ${pl.targetKg} kg by ${esc(fmtDay(pl.targetDate))}</span></div>
-    <div class="meter ${pr.status === 'behind' ? 'low' : 'good'}" style="margin-top:10px"><i style="width:${(pr.pct * 100).toFixed(1)}%"></i></div>
-    <div class="foot">${r?.ok && r.dir === 'hold' ? 'Holding your weight.' : `${r1(done)} of ${r1(Math.abs(goalMove))} kg done · ${say}`}</div>
-    ${r ? planResultHtml(r, { targetKg: pl.targetKg, targetDate: pl.targetDate }) : ''}
+    <div class="plan-line"><b class="num">${latestWeight()} kg</b><span class="faint">to ${pl.targetKg} kg ${when}</span></div>
+    <div class="meter ${pr.status === 'behind' && !eta ? 'low' : 'good'}" style="margin-top:10px"><i style="width:${(pr.pct * 100).toFixed(1)}%"></i></div>
+    <div class="foot">${r?.ok && r.dir === 'hold' ? 'Holding your weight.' : `${r1(done)} of ${r1(Math.abs(goalMove))} kg done${say ? ` · ${say}` : ''}`}</div>
+    ${result}
     ${pl.apply ? `<p class="faint" style="font-size:12.5px;margin:10px 0 0">Your daily calorie goal follows this plan${h.planSunday ? ', with its own goal on Sundays' : ''}.</p>` : `<p class="faint" style="font-size:12.5px;margin:10px 0 0">Your daily calorie goal is not linked to this plan.</p>`}
   </section>`;
 }
@@ -1615,30 +1658,56 @@ const r1 = (x) => Math.round(x * 10) / 10;
 
 function planSheet() {
   const h = state.health, old = h.plan, t = today();
-  const f = { cur: latestWeight(), target: old?.targetKg ?? '', date: old?.targetDate ?? C.addDays(t, 56), ex: old?.exerciseKcal ?? 0, exd: old?.exerciseDays ?? 7, sun: old?.sundayKcal ?? '', apply: old ? !!old.apply : true };
+  const avg = recentIntake();
+  const est = N.targets({ ...h.profile, weightKg: latestWeight() || h.profile.weightKg, activity: 'sedentary', goal: 'maintain', pace: 0 });
+  const f = {
+    mode: old?.mode === 'eta' ? 'eta' : 'date', cur: latestWeight(), target: old?.targetKg ?? '',
+    date: old?.targetDate && old.mode !== 'eta' ? old.targetDate : C.addDays(t, 56),
+    ex: old?.exerciseKcal ?? 0, exd: old?.exerciseDays ?? 7, sun: old?.sundayKcal ?? '', rest: old?.restingKcal ?? '',
+    eat: old?.eatKcal ?? avg ?? h.calorieGoal, apply: old ? !!old.apply : true, applyTouched: !!old,
+  };
   const field = (id, label, val, unit, mode = 'decimal', hint = '') => `<div class="field"><label class="eyebrow" for="${id}">${label}</label><div class="amount-box" style="margin-top:8px"><input id="${id}" class="num" inputmode="${mode}" value="${val ?? ''}" style="font-size:24px"><span class="faint" style="font-size:14px;padding-right:6px">${unit}</span></div>${hint ? `<p class="faint" style="font-size:12.5px;margin:6px 2px 0">${hint}</p>` : ''}</div>`;
-  const body = () => `
-    <p class="lead" style="margin-top:0">Pick where you are, where you want to be and when. The plan is worked out from today and adjusts every time you weigh in.</p>
+  const body = () => {
+    const eta = f.mode === 'eta';
+    return `
+    <div class="seg" role="tablist" aria-label="What to work out"><button class="${!eta ? 'on' : ''}" data-mode="date">Reach it by a date</button><button class="${eta ? 'on' : ''}" data-mode="eta">When will I get there?</button></div>
+    <p class="lead" style="margin-top:14px">${eta ? 'Enter what you eat and burn. Balance estimates when you reach your target, and updates the estimate every time you weigh in.' : 'Pick where you are, where you want to be and when. The plan is worked out from today and adjusts every time you weigh in.'}</p>
     <div class="opts" style="margin-top:6px">${field('pl-cur', 'Weight now', f.cur, 'kg')}${field('pl-target', 'Target weight', f.target, 'kg')}</div>
-    <div class="field"><label class="eyebrow" for="pl-date">Reach it by</label><input class="input num" type="date" id="pl-date" value="${f.date}" min="${C.addDays(t, 1)}">
-      <div class="chips wrap" style="margin-top:10px">${[[4, '4 weeks'], [8, '8 weeks'], [12, '12 weeks'], [26, '6 months']].map(([w, l]) => `<button class="chip" data-wk="${w}">${l}</button>`).join('')}</div></div>
-    <div class="opts">${field('pl-ex', 'Exercise burn', f.ex, 'kcal', 'numeric', 'Calories you burn in a workout, on top of a normal day.')}${field('pl-exd', 'Workout days', f.exd, 'a week', 'numeric', 'Days a week you do it, 1 to 7.')}</div>
-    ${field('pl-sun', 'Sundays I eat about', f.sun, 'kcal', 'numeric', 'Optional. Leave it empty to eat the same every day. The other days adjust so you still land on the date.')}
-    <div class="check ${f.apply ? 'on' : ''}" data-pl-apply style="margin-top:18px"><span class="box">${f.apply ? I.check : ''}</span><div><div class="t">Use it as my daily calorie goal</div><div class="s">Your Today screen and the overeating rule follow it, with its own goal on Sundays.</div></div></div>
+    ${eta
+      ? `${field('pl-eat', 'Calories I eat a day', f.eat, 'kcal', 'numeric', avg ? `Your last 7 days average ${nf0.format(avg)} kcal. <button class="link" data-use-avg style="font-size:12.5px;padding:6px 4px;margin:-6px -4px">Use that</button>` : 'A usual day. Log food for a few days and Balance can fill this in from what you ate.')}
+         ${field('pl-ex', 'Active calories I burn a day', f.ex, 'kcal', 'numeric', 'Exercise and movement: the Active Energy number on your Apple Watch, or in the Health app.')}`
+      : `<div class="field"><label class="eyebrow" for="pl-date">Reach it by</label><input class="input num" type="date" id="pl-date" value="${f.date}" min="${C.addDays(t, 1)}">
+           <div class="chips wrap" style="margin-top:10px">${[[4, '4 weeks'], [8, '8 weeks'], [12, '12 weeks'], [26, '6 months']].map(([w, l]) => `<button class="chip" data-wk="${w}">${l}</button>`).join('')}</div></div>
+         <div class="opts">${field('pl-ex', 'Active calories per workout', f.ex, 'kcal', 'numeric', 'What a workout burns, from your Watch or the machine.')}${field('pl-exd', 'Workout days', f.exd, 'a week', 'numeric', 'Days a week, 1 to 7.')}</div>`}
+    ${field('pl-rest', 'Resting calories a day', f.rest, 'kcal', 'numeric', `Optional: your Watch's Resting Energy. Balance then adds your active calories to it, like the Watch does. Leave it empty to use Balance's estimate${est ? ` of ${nf0.format(est.maintenance)} kcal for a normal day without exercise` : ''}.`)}
+    ${field('pl-sun', 'Sundays I eat about', f.sun, 'kcal', 'numeric', eta ? 'Optional. Leave it empty if Sundays are like other days.' : 'Optional. Leave it empty to eat the same every day. The other days adjust so you still land on the date.')}
+    <div class="check ${f.apply ? 'on' : ''}" data-pl-apply style="margin-top:18px"><span class="box">${f.apply ? I.check : ''}</span><div><div class="t">${eta ? 'Use these calories as my daily goal' : 'Use it as my daily calorie goal'}</div><div class="s">Your Today screen and the overeating rule follow it, with its own goal on Sundays.</div></div></div>
     <div id="pl-res"></div>
-    <div class="btn-row stick">${old ? `<button class="btn danger" data-pl-remove style="flex:0 0 auto;width:auto;padding:0 18px">Remove</button>` : ''}<button class="btn accent" data-pl-save>${old ? 'Save plan' : 'Make my plan'}</button></div>`;
+    <div class="btn-row stick">${old ? `<button class="btn danger" data-pl-remove style="flex:0 0 auto;width:auto;padding:0 18px">Remove</button>` : ''}<button class="btn accent" data-pl-save>${old ? 'Save' : eta ? 'Save estimate' : 'Make my plan'}</button></div>`;
+  };
   const sh = openSheet(old ? 'Weight goal' : 'Plan my weight goal', body());
+  const el = $('.sheet-body', sh);
   const num = (id) => { const v = ($(id, sh)?.value || '').replace(/,/g, '').trim(); return v === '' ? null : Number(v); };
-  const pull = () => { f.cur = num('#pl-cur'); f.target = num('#pl-target'); f.date = $('#pl-date', sh).value; f.ex = num('#pl-ex') ?? 0; f.exd = num('#pl-exd') ?? 0; f.sun = num('#pl-sun'); };
-  const compute = () => N.weightPlan({ profile: h.profile, currentKg: f.cur, targetKg: f.target, today: t, targetDate: f.date, exerciseKcal: f.ex, exerciseDays: f.exd, sundayKcal: f.sun });
-  const show = () => { pull(); $('#pl-res', sh).innerHTML = planResultHtml(compute(), { targetKg: f.target, targetDate: f.date }); };
+  const pull = () => {
+    f.cur = num('#pl-cur'); f.target = num('#pl-target'); f.ex = num('#pl-ex') ?? 0; f.sun = num('#pl-sun'); f.rest = num('#pl-rest');
+    if (f.mode === 'eta') { f.eat = num('#pl-eat'); f.exd = 7; } else { f.date = $('#pl-date', sh).value; f.exd = num('#pl-exd') ?? 0; }
+  };
+  const compute = () => {
+    const c = { profile: h.profile, currentKg: f.cur, targetKg: f.target, today: t, exerciseKcal: f.ex, exerciseDays: f.exd, sundayKcal: f.sun, restingKcal: f.rest };
+    return f.mode === 'eta' ? N.weightEta({ ...c, eatKcal: f.eat }) : N.weightPlan({ ...c, targetDate: f.date });
+  };
+  const show = () => { pull(); $('#pl-res', sh).innerHTML = f.mode === 'eta' ? etaResultHtml(compute(), { targetKg: f.target }) : planResultHtml(compute(), { targetKg: f.target, targetDate: f.date }); };
+  const redraw = () => { const y = sh.scrollTop; el.innerHTML = body(); sh.scrollTop = y; show(); };
   show();
   sh.addEventListener('input', show);
   sh.addEventListener('click', async (ev) => {
+    const md = ev.target.closest('[data-mode]');
+    if (md) { pull(); f.mode = md.dataset.mode; if (!f.applyTouched) f.apply = f.mode === 'date'; return redraw(); }
+    if (ev.target.closest('[data-use-avg]')) { $('#pl-eat', sh).value = avg; return show(); }
     const wk = ev.target.closest('[data-wk]');
     if (wk) { $('#pl-date', sh).value = C.addDays(t, Number(wk.dataset.wk) * 7); return show(); }
     const ap = ev.target.closest('[data-pl-apply]');
-    if (ap) { f.apply = !f.apply; ap.classList.toggle('on', f.apply); $('.box', ap).innerHTML = f.apply ? I.check : ''; return; }
+    if (ap) { f.apply = !f.apply; f.applyTouched = true; ap.classList.toggle('on', f.apply); $('.box', ap).innerHTML = f.apply ? I.check : ''; return; }
     if (ev.target.closest('[data-pl-remove]')) {
       if (await ask('Remove this plan?', 'Your weigh-ins stay. Your calorie goal goes back to the target from Body & goal.', 'Remove', true)) {
         if (h.plan?.apply) releasePlanGoal(); h.planSunday = null; h.plan = null; if (h.days[t]) delete h.days[t].rules;
@@ -1648,11 +1717,14 @@ function planSheet() {
     }
     if (!ev.target.closest('[data-pl-save]')) return;
     pull();
+    const eta = f.mode === 'eta';
     if (!(f.cur >= 25 && f.cur <= 300)) return warn('Enter your weight now, in kg');
     if (!(f.target >= 25 && f.target <= 300)) return warn('Enter the weight you want, in kg');
-    if (!(f.date > t)) return warn('Pick a date after today');
-    if (!(f.ex >= 0 && f.ex <= 3000)) return warn('Exercise burn should be 0 to 3,000 kcal');
-    if (f.ex > 0 && !(f.exd >= 1 && f.exd <= 7)) return warn('Workout days should be 1 to 7 a week');
+    if (eta && !(f.eat >= 500 && f.eat <= 8000)) return warn('Calories a day should be 500 to 8,000');
+    if (!eta && !(f.date > t)) return warn('Pick a date after today');
+    if (!(f.ex >= 0 && f.ex <= 3000)) return warn('Active calories should be 0 to 3,000');
+    if (!eta && f.ex > 0 && !(f.exd >= 1 && f.exd <= 7)) return warn('Workout days should be 1 to 7 a week');
+    if (f.rest != null && !(f.rest >= 800 && f.rest <= 4000)) return warn('Resting calories should be 800 to 4,000, or empty');
     if (f.sun != null && !(f.sun >= 500 && f.sun <= 6000)) return warn('Sunday calories should be 500 to 6,000, or empty');
     const r = compute(); if (!r.ok) return warn('Check the numbers');
     const wasApplied = !!h.plan?.apply;
@@ -1660,11 +1732,18 @@ function planSheet() {
       const ex = h.weights.find((x) => x.date === t); if (ex) ex.kg = f.cur; else h.weights.push({ date: t, kg: f.cur });
       h.profile.weightKg = f.cur;
     }
-    h.plan = { startKg: f.cur, startDate: t, targetKg: f.target, targetDate: f.date, exerciseKcal: f.ex, exerciseDays: f.exd, sundayKcal: f.sun, apply: f.apply };
+    h.plan = {
+      mode: f.mode, startKg: f.cur, startDate: t, targetKg: f.target,
+      targetDate: eta ? (r.date || C.addDays(t, 365)) : f.date, eatKcal: eta ? f.eat : null,
+      exerciseKcal: f.ex, exerciseDays: f.exd, sundayKcal: f.sun, restingKcal: f.rest || null, apply: f.apply,
+    };
     if (f.apply) syncPlanGoal(); else { h.planSunday = null; if (wasApplied) releasePlanGoal(); }
     if (h.days[t]) delete h.days[t].rules;
     closeSheet();
-    healthCommit(r.dir === 'hold' ? 'Plan saved · hold your weight' : `Plan saved · eat about ${nf0.format(r.weekday)} kcal a day`);
+    const msg = !eta ? (r.dir === 'hold' ? 'Plan saved · hold your weight' : `Plan saved · eat about ${nf0.format(r.weekday)} kcal a day`)
+      : r.status === 'never' ? `Saved · at ${nf0.format(r.avgIntake)} kcal you won't reach ${f.target} kg` : r.status === 'there' ? `Saved · you're at ${f.target} kg`
+      : `Saved · ${f.target} kg around ${fmtDay(r.date)}`;
+    healthCommit(msg);
   });
 }
 
@@ -1724,7 +1803,7 @@ function profileSheet(first = false) {
 
 // ---------------------------------------------------------------- picker
 /** Search and pick a food. mode 'log' adds it to the day; mode 'build' hands it to a meal being made. */
-const FIRST_GROUPS = ['Indian', 'Momos', 'WOW! Momo', 'Indo-Chinese', 'Vegetables', 'Fruits', 'Condiments', 'Pasta & grains', 'Snacks', 'Fast food', 'Dry fruits & nuts', 'Quick foods', 'Drinks', 'Basics'];
+const FIRST_GROUPS = ['Indian', 'Momos', 'WOW! Momo', 'Indo-Chinese', 'Vegetables', 'Fruits', 'Amul', 'Condiments', 'Pasta & grains', 'Snacks', 'Fast food', 'Dry fruits & nuts', 'Quick foods', 'Drinks', 'Basics'];
 function pickFood({ day, mode = 'log', onPick } = {}) {
   let q = '', brand = null;
   const lf = loggedFoods();

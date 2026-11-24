@@ -67,6 +67,7 @@ A day with no step count waits. So does a count taken before 11:30 PM that's und
   - **WOW! Momo:** its momo formats, MoBurgs, chocolate momo, and the Wow! China noodles, rice, starters, soups and drinks. WOW! doesn't publish a complete menu with nutrition, so these are the formats its outlets list, with estimated numbers.
   - **Indo-Chinese:** chowmein and hakka noodles, fried rice, manchurian dry and gravy, chilli paneer, chilli chicken, dragon chicken, lollipop, spring rolls, chopsuey, soups, thukpa and dim sum.
   - **Vegetables and fruits** per 100 g (type grams to log any amount), nuts and seeds, juices and shakes, namkeen and packaged snacks, and cafe and fast food.
+  - **Amul:** Taaza, Gold, Shakti and Slim & Trim milk, lassi, Masti chaas and dahi, mishti doi, shrikhand, Kool flavoured milks, milk powders; processed cheese slices, cubes and block, pizza cheese, mozzarella, cheddar, gouda, cheese spreads, cream cheese, paneer; butter, ghee, fresh and whipping cream, Mithai Mate; ice creams, kulfi and chocolates. Milk and processed cheese use the figures Amul publishes; the rest are typical label values. Typing "amul" in a search puts Amul's own products first.
   - **Condiments:** ketchup, soy sauce (light and dark), sriracha, schezwan, chilli and garlic sauces, peri peri, BBQ, mayonnaise (regular, eggless and light), dressings, hummus, mustard, vinegars, chutneys and raita, pickles, oils, jam, honey, spreads, sugar and sweeteners, and common spices. Mayo-based sauces are tagged egg, and oyster and Worcestershire sauce non-veg, so the diet filter hides them.
   - **Pasta and grains:** dry (raw) pasta by type per 80 g serving, including whole wheat (atta), maida, semolina, multigrain, egg, chickpea, lentil and gluten-free pasta, plus noodles, vermicelli, boiled pasta, and raw flours, rice, poha, oats and dals per 100 g.
   - **Chains:** the Indian menus of Subway, Domino's, Pizza Hut, Taco Bell, California Burrito, McDonald's, KFC, Burger King and Starbucks.
@@ -78,7 +79,7 @@ A day with no step count waits. So does a count taken before 11:30 PM that's und
 
 ### Weight goal planner
 
-Diet & food → Body → **Plan my weight goal**. Set the weight you have now, the weight you want, the date, how many calories a workout burns and how many days a week you do it, and optionally what you plan to eat on Sundays. It shows how much to eat each day to land on that date.
+Diet & food → Body → **Plan my weight goal**. It has two modes: **Reach it by a date** (below) and **When will I get there?**, which takes the calories you eat on a usual day (or your last 7 days' average), your active calories a day (Apple Watch Active Energy), optionally your resting calories (Resting Energy) and what you eat on Sundays, and estimates the date you reach your target. Both modes accept your own resting number; Balance then adds your active calories to it, the way the Watch does. In the date mode: Set the weight you have now, the weight you want, the date, how many calories a workout burns and how many days a week you do it, and optionally what you plan to eat on Sundays. It shows how much to eat each day to land on that date.
 
 - **What you burn:** resting burn × 1.2 (a normal day without workouts) plus the average daily exercise burn. Example: 900 kcal of exercise a day on top of a 2,129 kcal normal day is 3,029 kcal burned.
 - **The deficit:** a kilo of body weight is taken as 7,700 kcal. Losing 6 kg in 56 days is 825 kcal a day under your burn, so about 2,200 kcal a day to eat.
@@ -156,6 +157,7 @@ js/nutrition.js       targets from body & goal, scaling foods, label text and ba
 js/foods.js           built-in food list and search
 js/foods_more.js      about 600 more foods: Indian, Indo-Chinese, momos, vegetables, fruits, snacks, fast food
 js/foods_pantry.js    about 195 sauces, condiments, dry pasta and raw staples
+js/foods_amul.js      63 Amul products: milk, dairy, cheese, paneer, butter, ghee, ice cream
 js/foods_official.js  numbers from a company's own published nutrition information, which override the estimates
 js/foods_menus.js     Haldiram's, Faasos, chaap and casual veg, oils, and the bigger chain menus (rows list diet only when the name doesn't say)
 js/scan.js            camera barcode scanning, Open Food Facts lookup, label OCR

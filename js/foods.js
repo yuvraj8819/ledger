@@ -5,7 +5,8 @@
 // Row: [name, serving label, grams (or ml), kcal, protein g, carbs g, fat g, fibre g, sugar g, sodium mg, aliases?]
 // More Indian food, Indo-Chinese, momos, vegetables, fruit, snacks and fast food are in foods_more.js.
 import { MORE } from './foods_more.js';
-import { PANTRY } from './foods_pantry.js'; // sauces, condiments, dry pasta and raw staples
+import { PANTRY } from './foods_pantry.js';
+import { AMUL } from './foods_amul.js'; // Amul milk, dairy, cheese, paneer, butter, ghee, ice cream // sauces, condiments, dry pasta and raw staples
 import { MENUS } from './foods_menus.js';
 import { OFFICIAL } from './foods_official.js';
 
@@ -435,7 +436,7 @@ function official(brand, name, extra) {
 const times = (row, x) => { const r = row.slice(); for (const i of [2, 3, 4, 5, 6, 7, 8, 9]) r[i] = i === 3 || i === 9 || i === 2 ? Math.round(row[i] * x) : Math.round(row[i] * x * 10) / 10; return r; };
 
 const ALL = {};
-for (const src of [DATA, MORE, MENUS, PANTRY]) for (const [group, [brand, rows]] of Object.entries(src)) {
+for (const src of [DATA, MORE, MENUS, PANTRY, AMUL]) for (const [group, [brand, rows]] of Object.entries(src)) {
   if (ALL[group]) ALL[group][1] = ALL[group][1].concat(rows); else ALL[group] = [brand, rows.slice()];
 }
 
@@ -480,6 +481,8 @@ export function searchFoods(query, mine = [], { limit = 40, brandGroup = null, d
     }
     if (!ok) continue;
     if (f.source !== 'db') score += 3;
+    // typing a brand ("amul cheese") puts that brand's own products first
+    if (f.brand && norm(f.brand).split(' ').some((b) => words.includes(b))) score += 5;
     if (f.serving?.label === 'Footlong' || /Medium|Large/.test(f.serving?.label || '')) score -= 0.5;
     scored.push([score, f, i]);
   }

@@ -588,6 +588,7 @@ textarea.input { min-height: 88px; resize: vertical; font: 14px/1.4 ui-monospace
 .plan-line b { font: 700 30px/1 var(--display); font-stretch: 80%; }
 .plan-out { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--hair); }
 #pl-res .plan-out { margin-top: 18px; padding: 16px; border: 1px solid var(--g-brd); border-radius: var(--r-lg); background: var(--g-bg); }
+.plan-head { font: 750 24px/1.2 var(--font); letter-spacing: -.02em; margin-top: 6px; }
 .plan-sun { margin-top: 6px; font-size: 14.5px; color: var(--ink-2); }
 .plan-sun b { color: var(--ink); }
 .plan-facts { margin-top: 14px; }

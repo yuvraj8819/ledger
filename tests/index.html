@@ -576,6 +576,48 @@ test('foods: sauces, condiments and raw pasta can be found, with sensible diet t
   eq(vegOnly.includes('Oyster sauce') || vegOnly.includes('Fish sauce'), false);
 });
 
+// ---- your own numbers, and "when will I get there?"
+{
+  const P2 = { sex: 'male', age: 25, heightCm: 175, bodyFat: null };
+  const eta = (o) => N.weightEta({ profile: P2, currentKg: 80, targetKg: 77, today: '2026-11-24', eatKcal: 2000, exerciseKcal: 700, exerciseDays: 7, restingKcal: 1800, ...o });
+  test('your own resting calories: burn is resting + active, like the Watch', () => {
+    const r = N.weightPlan({ profile: P2, currentKg: 80, targetKg: 77, today: '2026-11-24', targetDate: '2027-02-24', exerciseKcal: 700, exerciseDays: 7, restingKcal: 1800 });
+    eq(r.burn, 2500); eq(r.base, 1800); eq(r.bmr, 1800); eq(r.customResting, true);
+    eq(N.weightPlan({ profile: P2, currentKg: 80, targetKg: 77, today: '2026-11-24', targetDate: '2027-02-24' }).customResting, false);
+  });
+  test('when will I get there: a 500 kcal gap loses 3 kg in 47 days', () => {
+    const r = eta({});
+    eq(r.ok, true); eq(r.status, 'ok'); eq(r.burn, 2500); eq(r.gap, 500); eq(r.days, 47); eq(r.date, '2027-01-10'); eq(r.weekday, 2000); eq(r.sunday, 2000);
+  });
+  test('when will I get there: bigger Sundays push the date out', () => {
+    const r = eta({ sundayKcal: 3000 });
+    eq(r.avgIntake, 2143); eq(r.days, 65); eq(r.sunday, 3000); eq(r.weekday, 2000);
+  });
+  test('when will I get there: eating at or over your burn never gets there, and says what would', () => {
+    const r = eta({ eatKcal: 2600 });
+    eq(r.status, 'never'); eq(r.date, null); eq(r.suggest, 1950);
+    eq(eta({ currentKg: 77, targetKg: 77 }).status, 'there');
+    eq(eta({ currentKg: 60, targetKg: 63, eatKcal: 2000 }).status, 'never'); // eating under your burn won't gain
+    eq(eta({ currentKg: 60, targetKg: 63, eatKcal: 3000 }).dir, 'gain');
+  });
+  test('when will I get there: warns when too fast or under the resting burn', () => {
+    const r = eta({ eatKcal: 1200, exerciseKcal: 1200 });
+    eq(r.notes.some((n) => /faster than/.test(n.t)), true); eq(r.notes.some((n) => /resting burn/.test(n.t)), true);
+    eq(eta({ eatKcal: 2480 }).status, 'long'); eq(eta({ eatKcal: 2450 }).days, 462);
+    eq(eta({ eatKcal: 0 }).why, 'eat');
+  });
+}
+test('foods: Amul products and cheeses can be found', () => {
+  const find = (q) => F.searchFoods(q, [], { limit: 80 }).map((f) => `${f.brand} ${f.name}`.toLowerCase());
+  const has = (q, part) => { if (!find(q).some((n) => n.includes(part))) throw new Error(`"${q}" should find "${part}"`); };
+  has('amul cheese slice', 'amul processed cheese slice'); has('amul cheese cube', 'cheese cube'); has('amul taaza', 'taaza'); has('amul gold', 'gold full cream');
+  has('amul butter', 'butter (salted'); has('amul ghee', 'pure ghee'); has('amul paneer', 'fresh paneer'); has('amul masti', 'masti'); has('amul kool', 'kool');
+  has('mozzarella', 'mozzarella'); has('cheddar', 'cheddar'); has('pizza cheese', 'pizza cheese'); has('amul ice cream', 'ice cream');
+  if (!F.BRAND_GROUPS.includes('Amul')) throw new Error('missing Amul group');
+  const slice = F.searchFoods('amul cheese slice', [], { limit: 5 }).find((f) => f.name === 'Processed cheese slice');
+  eq(slice.brand, 'Amul'); eq(slice.n.kcal, 65); eq(slice.diet, 'veg');
+});
+
 const failed = results.filter((r) => !r[1]);
 document.getElementById('sum').innerHTML = failed.length ? `<span class="bad">${failed.length} of ${results.length} failed</span>` : `<span class="ok">All ${results.length} tests passed</span>`;
 document.getElementById('out').innerHTML = results.map(([n, ok, m]) => `<div class="${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'} ${n}${m ? ' — ' + m : ''}</div>`).join('');
